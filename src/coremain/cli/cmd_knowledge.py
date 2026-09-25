@@ -506,18 +506,46 @@ async def skills_new(ctx: CLIContext, rt: Any, name: str, description: str, in_p
 
 @skills.command("select")
 @click.argument("text", nargs=-1, required=True)
-@click.option("--kind", default="feature")
-@click.option("--stage", default="implementation")
-@runtime_command(require_project=False)
-async def skills_select(ctx: CLIContext, rt: Any, text: tuple[str, ...], kind: str, stage: str) -> int:
+@click.option("--kind", default=None, help="Task kind (default: classify the request like a real task).")
+@click.option(
+    "--stage", default=None, help="Workflow stage (default: the first stage of the chosen workflow)."
+)
+@runtime_command(require_project=False, detect_project=True)
+async def skills_select(
+    ctx: CLIContext, rt: Any, text: tuple[str, ...], kind: str | None, stage: str | None
+) -> int:
     """Explain which skills would be selected for a request."""
-    picks = rt.skills.select(text=" ".join(text), task_kind=kind, languages=[], frameworks=[], stage=stage)
-    rows = [{"name": p.skill.name, "score": round(p.score, 2), "reasons": p.reasons} for p in picks]
+    from coremain.routing.modes import classify
+
+    request = " ".join(text)
+    cls = classify(request)
+    first_stage = {
+        "debug": "debugging",
+        "review": "review",
+        "answer": "question",
+        "plan": "planning",
+        "collaborative": "architecture",
+    }.get(cls.workflow, "implementation")
+    kind = kind or cls.kind
+    stage = stage or first_stage
+    profile = await rt.profile_for(rt.project) if rt.project is not None else {}
+    picks = rt.skills.select(
+        text=request,
+        task_kind=kind,
+        languages=list(profile.get("languages", {}))[:4],
+        frameworks=[f.split(" ")[0] for f in profile.get("frameworks", [])],
+        stage=stage,
+    )
+    rows = [
+        {"name": p.skill.name, "score": round(p.score, 2), "reasons": p.reasons, "kind": kind, "stage": stage}
+        for p in picks
+    ]
     ctx.output.data(
         rows,
         lambda c: (
+            c.print(f"[dim]kind {kind} · stage {stage}[/]"),
             [c.print(f"{r['name']} ({r['score']}): {'; '.join(r['reasons'])}") for r in rows]
-            or c.print("no skills selected")
+            or c.print("no skills selected"),
         ),
     )
     return 0

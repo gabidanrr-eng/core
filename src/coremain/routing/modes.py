@@ -28,7 +28,8 @@ _DEBUG = re.compile(
     re.I,
 )
 _REVIEW = re.compile(
-    r"\b(review|audit|critique|assess|check)\b.*\b(diff|change|pr|pull request|code|implementation|commit|branch)\b",
+    r"\b(review|audit|critique|assess|check)\b.*\b(diffs?|changes?|prs?|pull requests?|code|implementations?|commits?|"
+    r"branch(es)?|patch(es)?|edits?|modifications?)\b",
     re.I,
 )
 _REFACTOR = re.compile(
@@ -48,6 +49,12 @@ _UI = re.compile(
 )
 _DOCS = re.compile(r"\b(readme|docs?|documentation|docstring|changelog|comment)\b", re.I)
 _TESTS = re.compile(r"\b(tests?|coverage|unit test|integration test|e2e)\b", re.I)
+# Tests are the deliverable ("add tests for X", "increase coverage"), not a side requirement.
+_TESTS_TASK = re.compile(
+    r"\b(add|write|create|increase|improve|expand)\s+(?:(?:some|more|missing|the|a|new|better|unit|integration|e2e|"
+    r"end-to-end|regression|property-based)\s+)*(tests?|test cases?|test coverage|coverage|specs?)\b|^\s*tests?\s+for\b",
+    re.I,
+)
 _DEEP = re.compile(
     r"\b(thorough(ly)?|carefully|deep|comprehensive|production[- ]ready|robust|hardened?|critical)\b", re.I
 )
@@ -138,7 +145,7 @@ def classify(
         kind = "refactor"
     elif _DOCS.search(t) and not _CODE_HINT.search(t):
         kind = "docs"
-    elif _TESTS.search(t) and re.search(r"\b(add|write|create|increase|improve)\b", t, re.I):
+    elif _TESTS_TASK.search(t):
         kind = "tests"
     elif arch and not changes:
         kind = "architecture"

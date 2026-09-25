@@ -316,7 +316,11 @@ class SkillRegistry:
                 continue
             score = 0.0
             reasons: list[str] = []
-            hits = [t for t in skill.meta_list("core-triggers") if t and t in lowered]
+            hits = [
+                t
+                for t in skill.meta_list("core-triggers")
+                if t and re.search(rf"(?<!\w){re.escape(t)}(?!\w)", lowered)
+            ]
             if hits:
                 score += 2.0 * min(3, len(hits))
                 reasons.append("triggers: " + ", ".join(hits[:3]))
