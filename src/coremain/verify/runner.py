@@ -7,6 +7,7 @@ import fnmatch
 import os
 import re
 import shlex
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -34,6 +35,11 @@ class CheckResult:
     summary: str
     evidence_id: str | None = None
     output_excerpt: str = ""
+    not_applicable: bool = False
+
+    @property
+    def ok(self) -> bool:
+        return self.status == "pass" or (self.status == "skipped" and self.not_applicable)
 
 
 @dataclass
@@ -45,7 +51,7 @@ class VerificationReport:
 
     @property
     def required_failed(self) -> list[CheckResult]:
-        return [r for r in self.results if r.status != "pass" and r.name != "optional"]
+        return [r for r in self.results if not r.ok and r.name != "optional"]
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -68,6 +74,7 @@ class VerificationRunner:
         policy: PolicyEngine,
         redactor: Redactor,
         base_env: dict[str, str] | None = None,
+        browser: Callable[[], Any] | None = None,
     ):
         self.config = config
         self.processes = processes
@@ -77,6 +84,8 @@ class VerificationRunner:
         self.policy = policy
         self.redactor = redactor
         self.base_env = base_env
+        # Lazily resolves the browser extension (optional dependency) only when a check needs it.
+        self.browser = browser
 
     async def run(
         self,
@@ -172,6 +181,9 @@ class VerificationRunner:
                     req.name,
                 )
                 report.results.append(await self._command(req, str(cmd), workspace, env, common, cancel))
+        browser_reqs = [r for r in requirements if r.kind == EvidenceKind.BROWSER]
+        if browser_reqs:
+            report.results.extend(await self._browser(browser_reqs, contract, workspace, common, cancel))
         after = await self.workspaces.fingerprint(workspace)
         if after != diff.fingerprint:
             changed = await self._changed_between(workspace, diff.fingerprint, after)
@@ -186,6 +198,56 @@ class VerificationRunner:
     async def _changed_between(self, ws: Workspace, a: str, b: str) -> list[str]:
         res = await self.workspaces.git_for(ws).run("diff", "--name-only", a, b, check=False)
         return [line for line in res.text.splitlines() if line]
+
+    async def _browser(
+        self,
+        reqs: list[Requirement],
+        contract: dict[str, Any],
+        workspace: Workspace,
+        common: dict[str, Any],
+        cancel: CancelToken,
+    ) -> list[CheckResult]:
+        checks = [
+            c if isinstance(c, dict) else {"name": str(c), "url": str(c)}
+            for c in contract.get("browser_checks") or []
+        ]
+        by_name = {str(c.get("name", "browser")): c for c in checks}
+        wanted = [by_name[r.name] for r in reqs if r.name in by_name]
+        results: list[dict[str, Any]] = []
+        error: str | None = None
+        try:
+            if self.browser is None:
+                raise RuntimeError("browser automation is not available in this runtime")
+            manager = self.browser()
+            results = await manager.run_checks(
+                wanted,
+                workspace_path=workspace.path,
+                task_id=common["task_id"],
+                attempt_id=common["attempt_id"],
+                cancel=cancel,
+            )
+        except Exception as exc:  # noqa: BLE001 - an unavailable browser is recorded as an error, never as a pass
+            error = f"{type(exc).__name__}: {exc}"
+        out = []
+        for i, check in enumerate(wanted):
+            name = str(check.get("name", "browser"))
+            res = (
+                results[i]
+                if i < len(results)
+                else {"status": "error", "summary": error or "check did not run"}
+            )
+            status = res.get("status", "error")
+            ev = self.evidence.record(
+                kind=EvidenceKind.BROWSER,
+                status=status if status in {"pass", "fail", "error"} else "error",
+                trust=Trust.OBSERVED,
+                summary=f"{name}: {res.get('summary', '')}"[:500],
+                artifact_id=res.get("artifact_id"),
+                data={"name": name, "check": check, "console_errors": res.get("console_errors", [])[:20]},
+                **common,
+            )
+            out.append(CheckResult(EvidenceKind.BROWSER, name, ev.status, ev.summary, ev.id))
+        return out
 
     def _scope(self, diff: WorkspaceDiff, contract: dict[str, Any], common: dict[str, Any]) -> CheckResult:
         forbidden = list(contract.get("forbidden_paths") or [])
@@ -277,21 +339,29 @@ class VerificationRunner:
                     json.loads(path.read_text(encoding="utf-8"))
                 except (json.JSONDecodeError, UnicodeDecodeError) as exc:
                     problems.append(f"{f.path}: {exc}")
-        status = "fail" if problems else ("pass" if checked else "inconclusive")
+        # With no changed file in a checkable language the requirement is vacuous: recorded as a
+        # not-applicable skip that satisfies the gate but adds no evidence strength.
+        status = "fail" if problems else ("pass" if checked else "skipped")
         summary = (
             "; ".join(problems[:5])
             if problems
-            else (f"{checked} changed file(s) parse" if checked else "no parseable files changed")
+            else (
+                f"{checked} changed file(s) parse"
+                if checked
+                else "no changed file has a syntax checker (not applicable)"
+            )
         )
         ev = self.evidence.record(
             kind=EvidenceKind.SYNTAX,
             status=status,
             trust=Trust.OBSERVED,
             summary=summary,
-            data={"checked": checked, "problems": problems},
+            data={"checked": checked, "problems": problems, "not_applicable": not checked and not problems},
             **common,
         )
-        return CheckResult(EvidenceKind.SYNTAX, "", status, summary, ev.id)
+        return CheckResult(
+            EvidenceKind.SYNTAX, "", status, summary, ev.id, not_applicable=not checked and not problems
+        )
 
     @staticmethod
     def _narrow_lint(cmd: str, diff: WorkspaceDiff) -> str:

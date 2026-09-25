@@ -172,6 +172,7 @@ class CoreRuntime:
             policy=self.policy,
             redactor=self.redactor,
             base_env=self.env,
+            browser=lambda: self.extension("browser"),
         )
         self.failures = FailureRecorder(db, self.events, clock)
         self.approval_handler: ApprovalHandler | None = None

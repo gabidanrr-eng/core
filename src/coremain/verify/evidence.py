@@ -304,6 +304,10 @@ class EvidenceEngine:
                     notes.append(f"{req.key}: optional evidence is stale")
                 continue
             latest = current[-1]
+            if latest.status == "skipped" and latest.data.get("not_applicable"):
+                satisfied.append(req.key)  # vacuously true; deliberately not counted toward the level
+                notes.append(f"{req.key}: not applicable ({latest.summary})")
+                continue
             contradictory = (
                 req.state_bound and any(e.status == "fail" for e in current) and latest.status == "pass"
             )

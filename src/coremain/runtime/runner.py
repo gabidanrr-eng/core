@@ -502,7 +502,10 @@ class TaskRunner:
             role=role,
             node=node.id,
             system=system_prompt(
-                role, strategy=strategy, output_tool=output_tool, guidance=guidance_for(rt, role, run.task.kind)
+                role,
+                strategy=strategy,
+                output_tool=output_tool,
+                guidance=guidance_for(rt, role, run.task.kind),
             ),
             context_text=compiled.render(),
             tools=tools,
@@ -769,7 +772,7 @@ class TaskRunner:
         )
         run.outputs["verification"] = report.to_dict()
         required = {(r.kind, r.name) for r in run.requirements if r.required}
-        failed = [r for r in report.results if (r.kind, r.name) in required and r.status != "pass"]
+        failed = [r for r in report.results if (r.kind, r.name) in required and not r.ok]
         run.transition(TaskStatus.RUNNING, "verification finished")
         summary = "; ".join(f"{r.kind}: {r.status}" for r in report.results)
         run.emit("verification.completed", ok=not failed, summary=summary, notes=report.notes)
@@ -1349,7 +1352,11 @@ class TaskRunner:
             summary = self._summary(run)
             final = "completed"
             report = render_report(
-                run, gate, apply_info=apply_info, final_status=final, changed=None if diff is None else not diff.empty
+                run,
+                gate,
+                apply_info=apply_info,
+                final_status=final,
+                changed=None if diff is None else not diff.empty,
             )
             self._final_message(run, report)
             rt.tasks.end_attempt(
@@ -1387,7 +1394,11 @@ class TaskRunner:
         )
         summary = f"{'unverified: ' + claim if claim else 'No verified result'} — gate: {gate.summary}"
         report = render_report(
-            run, gate, apply_info=None, final_status=final_status.value, changed=None if diff is None else not diff.empty
+            run,
+            gate,
+            apply_info=None,
+            final_status=final_status.value,
+            changed=None if diff is None else not diff.empty,
         )
         self._final_message(run, report)
         rt.tasks.end_attempt(
