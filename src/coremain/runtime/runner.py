@@ -12,6 +12,7 @@ import asyncio
 import contextlib
 import logging
 import re
+import shlex
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -1197,6 +1198,8 @@ class TaskRunner:
             ]
             if targets:
                 cmd = f"{test_cmd} {targets[0]}"
+            elif (named := re.findall(r"\b(test_\w+)\b", run.task.description)) and "pytest" in test_cmd:
+                cmd = f"{test_cmd} -k {shlex.quote(' or '.join(dict.fromkeys(named)))}"
             elif re.search(
                 r"\b(failing|fails|failed) tests?\b|\btests?\b.{0,40}\b(failing|fails|failed|broken)\b",
                 run.task.description,

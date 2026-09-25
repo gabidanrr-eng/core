@@ -1,0 +1,32 @@
+# Provider resilience: transient failures are retried within policy and recorded.
+- id: provider-transient-retry
+  family: resilience
+  title: A rate-limited model call is retried (honouring Retry-After) and the task still completes
+  request: "Rename the greeting in hello.py from 'Hi' to 'Hello'."
+  mode: direct
+  test_command: "{python} -m pytest -q -p no:cacheprovider"
+  files:
+    hello.py: |
+      def greet(name):
+          return f"Hi, {name}!"
+    tests/test_hello.py: |
+      from hello import greet
+
+
+      def test_greet():
+          assert greet("Ada").endswith("Ada!")
+    pyproject.toml: |
+      [tool.pytest.ini_options]
+      pythonpath = ["."]
+  script:
+    implementer:
+      - error: {class: rate_limited, status: 429, message: "slow down", retry_after: 0, times: 1}
+        tool_calls: [{name: read_file, arguments: {path: hello.py}}]
+      - edit_file: {path: hello.py, old_string: "Hi,", new_string: "Hello,"}
+      - submit_result: {summary: "Greeting now says Hello", files_changed: [hello.py], confidence: high}
+    reviewer:
+      - submit_review: {verdict: approve, summary: "Simple, correct change"}
+  checks:
+    - status: completed
+    - model_retries_min: 1
+    - file_contains: {path: hello.py, text: "Hello, {name}!"}

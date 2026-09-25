@@ -16,12 +16,16 @@ stateless and deterministic (it survives crashes and resumption). A TURN is::
      "malformed_arguments": true, "delay_s": 0.5, "usage": {"input_tokens": 10, "output_tokens": 5}}
 
 Strings may contain ``{{last_tool_output}}`` which is replaced with the most recent tool result.
+
+An ``error`` with ``"times": N`` fails only the first N requests for that turn (per process) and
+then serves the turn's text/tool calls, which models transient failures that succeed on retry.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+from collections import Counter
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -57,6 +61,7 @@ class ScriptedProvider(Provider):
     ):
         super().__init__(provider_id, config, credential, secret_headers, **kw)
         self._script: dict[str, Any] | None = None
+        self._fired: Counter[str] = Counter()
 
     def script(self) -> dict[str, Any]:
         if self._script is None:
@@ -71,19 +76,20 @@ class ScriptedProvider(Provider):
                 ) from exc
         return self._script
 
-    def _turn(self, req: ChatRequest) -> dict[str, Any]:
+    def _turn(self, req: ChatRequest) -> tuple[str, dict[str, Any]]:
         script = self.script()
         role = str(req.metadata.get("role") or "default")
         node = str(req.metadata.get("node") or "")
         index = sum(1 for m in req.messages if m.role == "assistant")
+        key = f"{role}@{node}#{index}"
         roles = script.get("roles", {})
         turns = roles.get(f"{role}@{node}") or roles.get(role)
         if isinstance(turns, list) and index < len(turns):
-            return dict(turns[index])
+            return key, dict(turns[index])
         default = script.get("default")
         if isinstance(default, dict):
-            return dict(default)
-        return {
+            return key, dict(default)
+        return key, {
             "text": f"[scripted provider '{script.get('name', self.id)}' has no turn {index} for role {role}]"
         }
 
@@ -98,13 +104,14 @@ class ScriptedProvider(Provider):
         return value
 
     async def stream(self, req: ChatRequest) -> AsyncIterator[StreamEvent]:
-        turn = self._turn(req)
+        key, turn = self._turn(req)
         last_output = next((m.content for m in reversed(req.messages) if m.role == "tool"), "")
         turn = self._substitute(turn, last_output)
         if turn.get("delay_s"):
             await asyncio.sleep(float(turn["delay_s"]))
         err = turn.get("error")
-        if isinstance(err, dict):
+        if isinstance(err, dict) and (err.get("times") is None or self._fired[key] < int(err["times"])):
+            self._fired[key] += 1
             raise ProviderError(
                 f"{self.id}: scripted {err.get('class', 'server_error')}: {err.get('message', 'injected failure')}",
                 error_class=ProviderErrorClass(err.get("class", "server_error")),

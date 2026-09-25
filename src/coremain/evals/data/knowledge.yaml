@@ -1,0 +1,79 @@
+# Read-only work: questions with citations and review of uncommitted changes.
+- id: question-where-defined
+  family: questions
+  title: Answer where a function is defined and used, with citations, without changing files
+  request: "Where is slugify defined and which modules use it?"
+  files:
+    utils/__init__.py: ""
+    utils/strings.py: |
+      import re
+
+
+      def slugify(text: str) -> str:
+          return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    app.py: |
+      from utils.strings import slugify
+
+
+      def make_url(title: str) -> str:
+          return "/posts/" + slugify(title)
+  script:
+    researcher:
+      - search_text: {pattern: "slugify"}
+      - [{read_file: {path: utils/strings.py}}, {read_file: {path: app.py}}]
+      - submit_answer:
+          answer: "`slugify` is defined in `utils/strings.py` (line 4) and used by `app.py` in `make_url`."
+          citations: [{path: utils/strings.py, start_line: 4, end_line: 5}, {path: app.py, start_line: 1, end_line: 5}]
+          confidence: high
+  checks:
+    - status: completed
+    - answer_contains: ["utils/strings.py", "app.py"]
+    - canonical_unchanged: true
+
+- id: review-uncommitted-bug
+  family: code-review
+  title: Review uncommitted changes and flag an error-swallowing regression
+  request: "Review my uncommitted changes to calc.py"
+  mode: review
+  files:
+    calc.py: |
+      def divide(a, b):
+          return a / b
+    tests/test_calc.py: |
+      import pytest
+      from calc import divide
+
+
+      def test_divide():
+          assert divide(6, 3) == 2
+
+
+      def test_divide_by_zero():
+          with pytest.raises(ZeroDivisionError):
+              divide(1, 0)
+  uncommitted:
+    calc.py: |
+      def divide(a, b):
+          try:
+              return a / b
+          except Exception:
+              return 0
+  script:
+    reviewer:
+      - read_file: {path: calc.py}
+      - submit_review:
+          verdict: request_changes
+          summary: "The change silently turns every error into 0."
+          findings:
+            - severity: high
+              category: correctness
+              title: "divide() swallows ZeroDivisionError and returns 0"
+              file: calc.py
+              line: 4
+              rationale: "Callers can no longer distinguish a zero result from invalid input; test_divide_by_zero now fails."
+              evidence: "except Exception: return 0"
+              remediation: "Remove the blanket except or raise a domain error explicitly."
+  checks:
+    - review_verdict: request_changes
+    - findings_min: 1
+    - canonical_unchanged: true

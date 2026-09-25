@@ -61,6 +61,22 @@ COPY_IGNORES = frozenset(
     }
 )
 SHADOW_EXCLUDES = "\n".join(sorted(COPY_IGNORES | {".core/cache", ".core/tmp"})) + "\n"
+# Generated artifacts that must never enter a task's change set when they are *new* files
+# (edits to tracked files under these names are still real changes).
+GENERATED_DIRS = frozenset(COPY_IGNORES - {".git", ".idea", "coverage"})
+GENERATED_FILES = frozenset({".DS_Store", ".coverage"})
+GENERATED_SUFFIXES = (".pyc", ".pyo")
+
+
+def is_generated(path: str) -> bool:
+    parts = path.split("/")
+    return (
+        any(p in GENERATED_DIRS for p in parts[:-1])
+        or parts[-1] in GENERATED_FILES
+        or parts[-1].endswith(GENERATED_SUFFIXES)
+    )
+
+
 _IDENT = ("-c", "user.name=Core Main", "-c", "user.email=core-main@localhost", "-c", "commit.gpgsign=false")
 
 
@@ -456,6 +472,19 @@ class WorkspaceManager:
             git = self.git_for(ws)
         idx = git.with_index(self._index_file(ws))
         await idx.run("add", "-A", "--", ".", *self._excludes(ws))
+        if ws.base_ref is not None:
+            added = (await idx.run("diff", "--cached", "--name-only", "--diff-filter=A", "-z", ws.base_ref)).stdout
+            junk = [p for p in added.decode("utf-8", errors="surrogateescape").split("\x00") if p and is_generated(p)]
+            if junk:
+                await idx.run(
+                    "rm",
+                    "--cached",
+                    "-q",
+                    "--ignore-unmatch",
+                    "--pathspec-from-file=-",
+                    "--pathspec-file-nul",
+                    input="\x00".join(f":(literal){p}" for p in junk).encode("utf-8", errors="surrogateescape"),
+                )
         return await idx.out("write-tree")
 
     async def diff(self, ws: Workspace) -> WorkspaceDiff:

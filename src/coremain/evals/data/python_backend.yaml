@@ -1,0 +1,89 @@
+# Python backend: debugging and the verify → correct repair loop.
+- id: py-backend-pagination
+  family: python-backend
+  title: Fix an off-by-one pagination bug reproduced by a failing test
+  request: "test_first_page fails: paginate() returns the wrong items for page 1. Fix the bug in pager.py."
+  test_command: "{python} -m pytest -q -p no:cacheprovider"
+  files:
+    pager.py: |
+      def paginate(items, page, size):
+          """Return the given 1-based page of items."""
+          start = page * size
+          return items[start:start + size]
+    tests/test_pager.py: |
+      from pager import paginate
+
+
+      def test_first_page():
+          assert paginate(list(range(10)), 1, 3) == [0, 1, 2]
+
+
+      def test_last_partial_page():
+          assert paginate(list(range(10)), 4, 3) == [9]
+    pyproject.toml: |
+      [project]
+      name = "pager"
+      version = "0.1.0"
+
+      [tool.pytest.ini_options]
+      pythonpath = ["."]
+  script:
+    debugger:
+      - read_file: {path: pager.py}
+      - record_hypothesis: {statement: "paginate() treats the 1-based page number as 0-based"}
+      - edit_file: {path: pager.py, old_string: "start = page * size", new_string: "start = (page - 1) * size"}
+      - run_tests: {}
+      - submit_result: {summary: "paginate() now converts the 1-based page to a 0-based offset", files_changed: [pager.py], confidence: high}
+    reviewer:
+      - submit_review: {verdict: approve, summary: "Correct offset computation; both page tests pass"}
+  checks:
+    - status: completed
+    - min_level: strong
+    - evidence: {kind: repro, status: pass}
+    - file_contains: {path: pager.py, text: "(page - 1) * size"}
+    - command: "{python} -m pytest -q -p no:cacheprovider"
+    - changed_only: [pager.py]
+
+- id: py-backend-correction-loop
+  family: python-backend
+  title: A wrong first fix is caught by verification and repaired by the corrector
+  request: "Pages are 1-based but paginate() in pager.py treats them as 0-based. Fix it."
+  mode: direct
+  test_command: "{python} -m pytest -q -p no:cacheprovider"
+  files:
+    pager.py: |
+      def paginate(items, page, size):
+          """Return the given 1-based page of items."""
+          start = page * size
+          return items[start:start + size]
+    tests/test_pager.py: |
+      from pager import paginate
+
+
+      def test_first_page():
+          assert paginate(list(range(10)), 1, 3) == [0, 1, 2]
+
+
+      def test_last_partial_page():
+          assert paginate(list(range(10)), 4, 3) == [9]
+    pyproject.toml: |
+      [tool.pytest.ini_options]
+      pythonpath = ["."]
+  script:
+    implementer:
+      - read_file: {path: pager.py}
+      - edit_file: {path: pager.py, old_string: "start = page * size", new_string: "start = page * size - size + 1"}
+      - submit_result: {summary: "Adjusted the page offset", files_changed: [pager.py], confidence: medium}
+    corrector:
+      - read_file: {path: pager.py}
+      - edit_file: {path: pager.py, old_string: "start = page * size - size + 1", new_string: "start = (page - 1) * size"}
+      - run_tests: {}
+      - submit_result: {summary: "Fixed the offset to (page - 1) * size after the first attempt failed tests", files_changed: [pager.py], confidence: high}
+    reviewer:
+      - submit_review: {verdict: approve, summary: "Offset is now correct"}
+  checks:
+    - status: completed
+    - evidence: {kind: tests, status: fail}
+    - evidence: {kind: tests, status: pass}
+    - file_contains: {path: pager.py, text: "(page - 1) * size"}
+    - command: "{python} -m pytest -q -p no:cacheprovider"
