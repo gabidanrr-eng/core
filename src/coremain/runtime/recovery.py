@@ -66,7 +66,11 @@ def recover(rt: CoreRuntime, *, kill_orphans: bool = False, dry_run: bool = Fals
     dead_runtimes = {r["id"] for r in db.query("SELECT id FROM runtimes WHERE status <> 'running'")} | set(
         report.stale_runtimes
     )
-    for lease in rt.leases.expired():
+    # A lease held by a runtime proven dead is reclaimable now; fencing tokens still reject any
+    # late write from the old holder, so this cannot corrupt state even if the proof were wrong.
+    candidates = {(r["resource"], r["token"]): r for r in rt.leases.expired()}
+    candidates.update({(r["resource"], r["token"]): r for r in rt.leases.held_by_runtimes(dead_runtimes)})
+    for lease in candidates.values():
         resource = lease["resource"]
         if not resource.startswith("task:"):
             continue

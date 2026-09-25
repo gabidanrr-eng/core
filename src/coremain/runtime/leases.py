@@ -91,6 +91,13 @@ class LeaseManager:
             (self.clock.now(),),
         )
 
+    def held_by_runtimes(self, runtime_ids: set[str]) -> list[sqlite3.Row]:
+        """Unreleased leases whose owner (``<runtime_id>:<worker>``) belongs to one of ``runtime_ids``."""
+        if not runtime_ids:
+            return []
+        rows = self.db.query("SELECT * FROM leases WHERE owner IS NOT NULL AND released_at IS NULL")
+        return [r for r in rows if str(r["owner"]).split(":", 1)[0] in runtime_ids]
+
     def force_expire(self, resource: str) -> None:
         """Administrative/test helper: expire a lease immediately (the holder is fenced out)."""
         with self.db.tx() as conn:
