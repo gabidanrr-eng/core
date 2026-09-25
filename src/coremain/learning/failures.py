@@ -92,7 +92,7 @@ class FailureRecorder:
         now = self.clock.now()
         cur = self.db.execute(
             "UPDATE failures SET outcome = 'resolved', resolution = ?, resolution_evidence_id = ?, verified = ?, resolved_at = ?, "
-            "regression_candidate = CASE WHEN category IN ('verification', 'review', 'tool', 'workflow') THEN 1 ELSE regression_candidate END "
+            "regression_candidate = CASE WHEN category IN ('verification', 'review', 'tool', 'workflow', 'gate') THEN 1 ELSE regression_candidate END "
             "WHERE task_id = ? AND outcome = 'open'",
             (resolution[:1000], evidence_id, 1 if verified else 0, now, task_id),
         )

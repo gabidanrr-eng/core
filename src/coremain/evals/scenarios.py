@@ -57,8 +57,8 @@ class Scenario:
     family: str
     title: str
     request: str
-    files: dict[str, str]
     checks: list[dict[str, Any]]
+    files: dict[str, str] = field(default_factory=dict)
     suites: list[str] = field(default_factory=lambda: ["smoke", "core"])
     script: dict[str, Any] | None = None
     mode: str | None = None
@@ -67,6 +67,8 @@ class Scenario:
     test_command: str | None = None
     config: dict[str, Any] = field(default_factory=dict)
     uncommitted: dict[str, str] = field(default_factory=dict)
+    # Replay an existing repository state instead of ``files``: {"path", "ref", "commit"}.
+    repo: dict[str, str] | None = None
     models: int = 1
     timeout_s: float = 600.0
     source: str = "builtin"
@@ -121,6 +123,8 @@ def _parse(raw: dict[str, Any], origin: str) -> Scenario:
     missing = [k for k in ("id", "family", "title", "request", "checks") if k not in raw]
     if missing:
         raise ConfigError(f"{origin}: scenario is missing {', '.join(missing)}")
+    if raw.get("repo") and raw.get("files"):
+        raise ConfigError(f"{origin}: scenario {raw['id']} sets both 'repo' and 'files'")
     unknown = set(raw) - {f for f in Scenario.__dataclass_fields__ if f != "source"}
     if unknown:
         raise ConfigError(f"{origin}: scenario {raw['id']} has unknown keys {sorted(unknown)}")

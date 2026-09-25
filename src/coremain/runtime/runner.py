@@ -496,10 +496,14 @@ class TaskRunner:
                 )
                 pending = pending[1:]
                 approval_id = None
+        from coremain.learning.analysis import guidance_for
+
         spec = AgentSpec(
             role=role,
             node=node.id,
-            system=system_prompt(role, strategy=strategy, output_tool=output_tool),
+            system=system_prompt(
+                role, strategy=strategy, output_tool=output_tool, guidance=guidance_for(rt, role, run.task.kind)
+            ),
             context_text=compiled.render(),
             tools=tools,
             route=route,
@@ -1371,6 +1375,16 @@ class TaskRunner:
         progress = bool(diff and not diff.empty) or bool(run.outputs.get("answer"))
         final_status = TaskStatus.INCOMPLETE if progress else TaskStatus.FAILED
         claim = self._summary(run)
+        rt.failures.record(
+            category="gate",
+            error_class="requirements_unmet" if progress else "no_result",
+            summary=f"evidence gate not satisfied: {gate.summary}",
+            project_id=run.project.id,
+            task_id=run.task.id,
+            attempt_id=run.attempt.id,
+            stage="finalize",
+            context={"missing": gate.to_dict().get("missing"), "claim": claim[:500] if claim else None},
+        )
         summary = f"{'unverified: ' + claim if claim else 'No verified result'} — gate: {gate.summary}"
         report = render_report(
             run, gate, apply_info=None, final_status=final_status.value, changed=None if diff is None else not diff.empty

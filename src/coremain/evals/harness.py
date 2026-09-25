@@ -294,13 +294,18 @@ class EvalHarness:
     @staticmethod
     def _make_repo(repo: Path, sc: Scenario) -> Path:
         repo.mkdir(parents=True)
+        run = lambda *a: subprocess.run(["git", *_IDENT, *a], cwd=repo, check=True, capture_output=True)  # noqa: E731
+        if sc.repo:
+            run("init", "-q", "-b", "main")
+            run("fetch", "-q", "--no-tags", sc.repo["path"], sc.repo.get("ref") or sc.repo["commit"])
+            run("checkout", "-q", "-B", "main", sc.repo["commit"])
+            return repo
         for rel, content in sc.files.items():
             path = repo / rel
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(content, encoding="utf-8")
             if rel.endswith(".sh"):
                 path.chmod(0o755)
-        run = lambda *a: subprocess.run(["git", *_IDENT, *a], cwd=repo, check=True, capture_output=True)  # noqa: E731
         run("init", "-q", "-b", "main")
         run("add", "-A")
         run("commit", "-qm", "scenario fixture", "--allow-empty")

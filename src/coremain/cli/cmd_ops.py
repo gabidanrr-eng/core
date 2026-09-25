@@ -411,11 +411,12 @@ async def learn_list(ctx: CLIContext, rt: Any) -> int:
 @learn.command("validate")
 @click.argument("heuristic_id")
 @click.option("--suite", default="smoke", show_default=True)
+@click.option("--scenario", "scenario_ids", multiple=True, help="Validate on specific scenarios only.")
 @runtime_command(require_project=False)
-async def learn_validate(ctx: CLIContext, rt: Any, heuristic_id: str, suite: str) -> int:
+async def learn_validate(ctx: CLIContext, rt: Any, heuristic_id: str, suite: str, scenario_ids: tuple[str, ...]) -> int:
     from coremain.learning.analysis import validate_heuristic
 
-    result = await validate_heuristic(rt, heuristic_id, suite=suite)
+    result = await validate_heuristic(rt, heuristic_id, suite=suite, scenario_ids=list(scenario_ids) or None)
     ctx.output.data(result, lambda c: c.print(f"{heuristic_id}: {result['status']} — {result['reason']}"))
     return 0 if result["status"] == "validated" else 1
 

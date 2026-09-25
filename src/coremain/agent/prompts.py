@@ -59,10 +59,17 @@ REVIEW_STRATEGIES: dict[str, str] = {
 }
 
 
-def system_prompt(role: str, *, strategy: str | None = None, output_tool: str | None = None) -> str:
+def system_prompt(
+    role: str, *, strategy: str | None = None, output_tool: str | None = None, guidance: list[str] | None = None
+) -> str:
     parts = [ROLES.get(role, ROLES["implementer"]), COMMON]
     if strategy:
         parts.append(REVIEW_STRATEGIES.get(strategy, ""))
+    if guidance:
+        parts.append(
+            "Learned guidance (validated against this installation's history; follow it unless the task says otherwise):\n"
+            + "\n".join(f"- {g}" for g in guidance)
+        )
     if output_tool:
         parts.append(f"Finish by calling `{output_tool}`.")
     return "\n\n".join(p for p in parts if p)
