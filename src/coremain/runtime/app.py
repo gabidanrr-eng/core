@@ -171,6 +171,7 @@ class CoreRuntime:
             workspaces=self.workspaces,
             policy=self.policy,
             redactor=self.redactor,
+            base_env=self.env,
         )
         self.failures = FailureRecorder(db, self.events, clock)
         self.approval_handler: ApprovalHandler | None = None
@@ -337,6 +338,7 @@ class CoreRuntime:
             research=self._extensions.get("research"),
             lsp=self._extensions.get("lsp"),
             profile=profile,
+            base_env=self.env,
         )
 
     def _active_heuristics(self, kind: str) -> list[dict[str, Any]]:

@@ -19,7 +19,9 @@ from coremain.verify.testparse import parse_test_output
 
 def subprocess_env(ctx: ToolContext) -> dict[str, str]:
     return build_subprocess_env(
-        os.environ, passthrough=ctx.services.config.permissions.env_passthrough, extra=ctx.extra_env
+        ctx.services.base_env if ctx.services.base_env is not None else os.environ,
+        passthrough=ctx.services.config.permissions.env_passthrough,
+        extra=ctx.extra_env,
     )
 
 

@@ -1182,7 +1182,8 @@ class TaskRunner:
     async def _reproduce(self, run: TaskRun, node: Node) -> NodeResult:
         rt = self.rt
         cmd = run.task.contract.get("repro_command")
-        test_cmd = (run.profile.get("commands") or {}).get("test") or rt.config.verification.commands.get(
+        # Explicit configuration wins over auto-detection, matching the verifier's precedence.
+        test_cmd = rt.config.verification.commands.get("test") or (run.profile.get("commands") or {}).get(
             "test"
         )
         if not cmd and test_cmd:
@@ -1206,8 +1207,6 @@ class TaskRunner:
             return NodeResult(
                 "skip", "no reproduction command identified; the debugger will reproduce manually"
             )
-        import os
-
         from coremain.security.commands import analyze_command
         from coremain.security.env import build_subprocess_env
         from coremain.security.policy import Capability, PolicyRequest
@@ -1227,7 +1226,7 @@ class TaskRunner:
         if decision.decision != "allow":
             return NodeResult("skip", f"reproduction command not allowed by policy ({decision.reason})")
         env = build_subprocess_env(
-            os.environ,
+            rt.env,
             passthrough=rt.config.permissions.env_passthrough,
             extra={"CI": "1", **rt.workspace_env(run.workspace, run.profile)},
         )
@@ -1331,7 +1330,7 @@ class TaskRunner:
                 rt.workspaces.set_status(ws, "preserved", reason="apply conflict")
                 summary = f"{exc.message}. Changes are preserved in {ws.path}."
                 report = render_report(
-                    run, gate, apply_info=None, final_status="needs_input", conflict=exc.details
+                    run, gate, apply_info=None, final_status="needs_input", conflict=exc.details, changed=True
                 )
                 self._final_message(run, report)
                 rt.tasks.end_attempt(
@@ -1342,7 +1341,9 @@ class TaskRunner:
         if gate.passed:
             summary = self._summary(run)
             final = "completed"
-            report = render_report(run, gate, apply_info=apply_info, final_status=final)
+            report = render_report(
+                run, gate, apply_info=apply_info, final_status=final, changed=None if diff is None else not diff.empty
+            )
             self._final_message(run, report)
             rt.tasks.end_attempt(
                 run.attempt.id, AttemptStatus.SUCCEEDED, fence=run.fence, usage=run.budget.snapshot()
@@ -1366,8 +1367,11 @@ class TaskRunner:
             return NodeResult("completed")
         progress = bool(diff and not diff.empty) or bool(run.outputs.get("answer"))
         final_status = TaskStatus.INCOMPLETE if progress else TaskStatus.FAILED
-        summary = f"{self._summary(run) or 'No verified result'} — gate: {gate.summary}"
-        report = render_report(run, gate, apply_info=None, final_status=final_status.value)
+        claim = self._summary(run)
+        summary = f"{'unverified: ' + claim if claim else 'No verified result'} — gate: {gate.summary}"
+        report = render_report(
+            run, gate, apply_info=None, final_status=final_status.value, changed=None if diff is None else not diff.empty
+        )
         self._final_message(run, report)
         rt.tasks.end_attempt(
             run.attempt.id,

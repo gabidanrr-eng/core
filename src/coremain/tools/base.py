@@ -81,6 +81,8 @@ class ToolServices:
     lsp: Any = None
     profile: dict[str, Any] = field(default_factory=dict)
     spawn_subtask: Callable[..., Awaitable[str]] | None = None
+    # Base environment for child processes (the runtime's env, not necessarily os.environ).
+    base_env: dict[str, str] | None = None
 
 
 @dataclass

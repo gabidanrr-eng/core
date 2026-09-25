@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import os
 import re
 from typing import TYPE_CHECKING, Any
 
@@ -53,7 +52,7 @@ class MCPManager:
     def _transport(self, name: str, cfg: MCPServerConfig) -> Transport:
         store = self.rt.credentials
         if cfg.transport == "stdio":
-            env = build_subprocess_env(os.environ, passthrough=self.rt.config.permissions.env_passthrough)
+            env = build_subprocess_env(self.rt.env, passthrough=self.rt.config.permissions.env_passthrough)
             env.update(cfg.env)
             for key, ref in cfg.secret_env.items():
                 value = resolve_credential(ref, store, env=self.rt.env, redactor=self.rt.redactor).value

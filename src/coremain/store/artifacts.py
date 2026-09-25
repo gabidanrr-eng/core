@@ -84,10 +84,12 @@ class ArtifactStore:
         media_type: str = "application/octet-stream",
         meta: dict[str, Any] | None = None,
         state: str = "live",
+        artifact_id: str | None = None,
     ) -> Artifact:
+        """``artifact_id`` preserves an existing identity (bundle import); new ids are generated otherwise."""
         sha = self._write_blob(data)
         now = self.clock.now()
-        artifact_id = new_id("art", now=now)
+        artifact_id = artifact_id or new_id("art", now=now)
         self.db.execute(
             "INSERT INTO artifacts(id, project_id, task_id, attempt_id, kind, name, sha256, size, media_type, state, meta_json, created_at) "
             "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",

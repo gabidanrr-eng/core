@@ -26,7 +26,9 @@ def render_report(
     apply_info: dict[str, Any] | None,
     final_status: str,
     conflict: dict[str, Any] | None = None,
+    changed: bool | None = None,
 ) -> str:
+    """``changed`` is whether the workspace diff is non-empty (None when unknown)."""
     rt = run.rt
     lines: list[str] = []
     icon = STATUS_ICON.get(final_status, "•")
@@ -51,12 +53,18 @@ def render_report(
             lines.append("Sources: " + ", ".join(refs))
     elif result.get("summary"):
         lines.append("")
-        lines.append(result["summary"].strip())
+        if gate.passed:
+            lines.append(result["summary"].strip())
+        else:
+            # Never present a model's own account as the outcome when evidence does not back it.
+            lines.append(f"_Implementer's report (not confirmed by evidence):_ {result['summary'].strip()}")
     verification = run.outputs.get("verification") or {}
     if run.changes_code:
         lines.append("")
         files = [r for r in verification.get("results", []) if r["kind"] == "diff"]
-        if files:
+        if changed is False:
+            lines.append("**Changes:** none — the workspace has no modifications.")
+        elif files:
             lines.append(f"**Changes:** {files[-1]['summary']}")
         if apply_info:
             applied = len(apply_info.get("applied", [])) + len(apply_info.get("merged", []))
@@ -64,7 +72,7 @@ def render_report(
                 f"**Applied to your working tree:** {applied} file(s)"
                 + (f" (3-way merged: {', '.join(apply_info['merged'])})" if apply_info.get("merged") else "")
             )
-        elif run.workspace.isolated:
+        elif run.workspace.isolated and changed is not False:
             lines.append(
                 f"**Workspace:** changes are in `{run.workspace.path}` (branch `{run.workspace.branch or 'n/a'}`); "
                 f"inspect with `core task diff {run.task.id}` and apply with `core task apply {run.task.id}`."

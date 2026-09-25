@@ -67,6 +67,7 @@ class VerificationRunner:
         workspaces: WorkspaceManager,
         policy: PolicyEngine,
         redactor: Redactor,
+        base_env: dict[str, str] | None = None,
     ):
         self.config = config
         self.processes = processes
@@ -75,6 +76,7 @@ class VerificationRunner:
         self.workspaces = workspaces
         self.policy = policy
         self.redactor = redactor
+        self.base_env = base_env
 
     async def run(
         self,
@@ -105,8 +107,11 @@ class VerificationRunner:
         kinds = {r.kind for r in requirements}
         if EvidenceKind.DIFF in kinds:
             status = "pass" if not diff.empty else "fail"
+            listed = ", ".join(f"{f.status} {f.path}" for f in diff.files[:8])
+            more = f", … {len(diff.files) - 8} more" if len(diff.files) > 8 else ""
             summary = (
-                f"{diff.stats.get('files', 0)} file(s) changed (+{diff.stats.get('added', 0)} -{diff.stats.get('removed', 0)})"
+                f"{diff.stats.get('files', 0)} file(s) changed (+{diff.stats.get('added', 0)} -{diff.stats.get('removed', 0)}): "
+                f"{listed}{more}"
                 if not diff.empty
                 else "no changes in workspace"
             )
@@ -126,7 +131,7 @@ class VerificationRunner:
         if EvidenceKind.SYNTAX in kinds:
             report.results.append(await self._syntax(workspace, diff, common))
         env = build_subprocess_env(
-            os.environ,
+            self.base_env if self.base_env is not None else os.environ,
             passthrough=self.config.permissions.env_passthrough,
             extra={"CI": "1", **(extra_env or {})},
         )
