@@ -9,9 +9,10 @@ from typing import Any
 import click
 
 from coremain.cli.common import CLIContext, runtime_command
-from coremain.cli.output import ago, styled_status, task_exit_code
+from coremain.cli.output import ago, task_exit_code
 from coremain.domain.states import TaskStatus
 from coremain.errors import ConflictError, NotFoundError, UsageError
+from coremain.ui.describe import styled_status
 from coremain.util.jsonutil import dumps
 from coremain.util.text import one_line
 

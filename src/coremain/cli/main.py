@@ -11,8 +11,9 @@ from typing import Any
 import click
 
 from coremain.cli.common import CLIContext, CommandExit, run_async, runtime_command
-from coremain.cli.output import Output, ago, styled_status, task_exit_code
+from coremain.cli.output import Output, ago, task_exit_code
 from coremain.errors import CoreError, ExitCode, UsageError
+from coremain.ui.describe import styled_status
 from coremain.version import __version__
 
 MODES = ["direct", "plan", "collaborative", "adversarial", "deep", "debug", "answer", "review", "recovery"]

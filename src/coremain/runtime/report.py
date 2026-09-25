@@ -63,24 +63,24 @@ def render_report(
         lines.append("")
         files = [r for r in verification.get("results", []) if r["kind"] == "diff"]
         if changed is False:
-            lines.append("**Changes:** none — the workspace has no modifications.")
+            lines.append("- **Changes:** none — the workspace has no modifications.")
         elif files:
-            lines.append(f"**Changes:** {files[-1]['summary']}")
+            lines.append(f"- **Changes:** {files[-1]['summary']}")
         if apply_info:
             applied = len(apply_info.get("applied", [])) + len(apply_info.get("merged", []))
             lines.append(
-                f"**Applied to your working tree:** {applied} file(s)"
+                f"- **Applied to your working tree:** {applied} file(s)"
                 + (f" (3-way merged: {', '.join(apply_info['merged'])})" if apply_info.get("merged") else "")
             )
         elif run.workspace.isolated and changed is not False:
             lines.append(
-                f"**Workspace:** changes are in `{run.workspace.path}` (branch `{run.workspace.branch or 'n/a'}`); "
+                f"- **Workspace:** changes are in `{run.workspace.path}` (branch `{run.workspace.branch or 'n/a'}`); "
                 f"inspect with `core task diff {run.task.id}` and apply with `core task apply {run.task.id}`."
             )
         checks = [r for r in verification.get("results", []) if r["kind"] != "diff"]
         if checks:
             lines.append(
-                "**Verification:** "
+                "- **Verification:** "
                 + "; ".join(
                     f"{r['kind']}{(':' + r['name']) if r.get('name') and r['name'] != 'suite' else ''} "
                     f"{'✓' if r['status'] == 'pass' else r['status']} ({r['summary']})"
@@ -92,7 +92,7 @@ def render_report(
         last = [r for r in reviews if r["reviewer"] != "deterministic"][-3:] or reviews[-1:]
         open_findings = rt.reviews.open_findings(run.task.id)
         lines.append(
-            "**Review:** "
+            "- **Review:** "
             + "; ".join(
                 f"{r['strategy']} by {r['reviewer']} → {r['verdict']}"
                 + (f" ({r['independence']})" if r.get("independence") else "")
@@ -108,16 +108,16 @@ def render_report(
             lines.append(f"  - {f['severity']}: {f['title']}{loc}")
     if result.get("remaining_issues"):
         lines.append(
-            "**Remaining issues (reported by implementer):** " + "; ".join(result["remaining_issues"][:8])
+            "- **Remaining issues (reported by implementer):** " + "; ".join(result["remaining_issues"][:8])
         )
     lines.append("")
-    lines.append(f"**Evidence gate:** {'passed' if gate.passed else 'not satisfied'} — {gate.summary}")
+    lines.append(f"- **Evidence gate:** {'passed' if gate.passed else 'not satisfied'} — {gate.summary}")
     for note in gate.notes[:6]:
         lines.append(f"  - {note}")
     if conflict:
         lines.append("")
         lines.append(
-            "**Apply conflict:** "
+            "- **Apply conflict:** "
             + "; ".join(f"{c['path']} ({c['reason']})" for c in conflict.get("conflicts", [])[:10])
         )
     usage = run.budget.snapshot()

@@ -17,24 +17,6 @@ from coremain.domain.states import TaskStatus
 from coremain.errors import CoreError, ExitCode
 from coremain.util.jsonutil import dumps
 
-STATUS_STYLE = {
-    "completed": "green",
-    "running": "cyan",
-    "verifying": "cyan",
-    "reviewing": "cyan",
-    "queued": "blue",
-    "pending": "blue",
-    "awaiting_approval": "yellow",
-    "needs_input": "yellow",
-    "blocked": "red",
-    "paused": "yellow",
-    "interrupted": "yellow",
-    "incomplete": "yellow",
-    "failed": "red",
-    "cancelled": "dim",
-    "unknown": "magenta",
-}
-
 
 def task_exit_code(status: TaskStatus | str) -> ExitCode:
     s = TaskStatus(status)
@@ -113,10 +95,6 @@ def ago(ts: float | None) -> str:
         if delta >= size:
             return f"{int(delta // size)}{unit} ago"
     return f"{int(delta)}s ago"
-
-
-def styled_status(status: str) -> str:
-    return f"[{STATUS_STYLE.get(status, 'white')}]{status}[/]"
 
 
 def to_json(obj: Any) -> str:

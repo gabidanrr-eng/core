@@ -1,0 +1,147 @@
+Screen {
+    layout: vertical;
+}
+
+#status {
+    height: 1;
+    padding: 0 1;
+    background: $primary-background;
+    color: $text;
+}
+
+#body {
+    height: 1fr;
+}
+
+#sessions {
+    width: 30;
+    border-right: solid $primary-background-lighten-2;
+    background: $surface;
+}
+
+#sessions.hidden {
+    display: none;
+}
+
+#main {
+    width: 1fr;
+}
+
+#conversation {
+    height: 1fr;
+    padding: 0 1;
+}
+
+#prompt {
+    height: auto;
+    border-top: solid $primary-background-lighten-2;
+    padding: 0 1;
+}
+
+#prompt-hint {
+    color: $text-muted;
+    height: 1;
+}
+
+#panel {
+    width: 60;
+    border-left: solid $primary-background-lighten-2;
+}
+
+#panel.hidden {
+    display: none;
+}
+
+.user-msg {
+    margin: 1 0 0 0;
+    padding: 0 1;
+    background: $boost;
+    border-left: thick $accent;
+}
+
+.assistant-msg {
+    margin: 1 0 0 0;
+}
+
+.note {
+    color: $text-muted;
+    margin: 1 0 0 0;
+}
+
+.note.warning {
+    color: $warning;
+}
+
+.note.error {
+    color: $error;
+}
+
+.task-block {
+    height: auto;
+    margin: 1 0 0 0;
+    padding: 0 1;
+    border-left: thick $primary;
+}
+
+.task-header {
+    height: auto;
+}
+
+.task-activity {
+    height: auto;
+    color: $text-muted;
+}
+
+.task-live {
+    height: auto;
+    max-height: 16;
+    color: $text-muted;
+    display: none;
+}
+
+.task-report {
+    height: auto;
+}
+
+#task-details, #diff-view {
+    padding: 0 1;
+}
+
+ApprovalScreen, QuestionScreen, HelpScreen {
+    align: center middle;
+}
+
+#dialog {
+    width: 90;
+    max-width: 95%;
+    height: auto;
+    max-height: 90%;
+    padding: 1 2;
+    background: $panel;
+    border: thick $warning;
+}
+
+#dialog.help {
+    border: thick $primary;
+    height: 80%;
+}
+
+#dialog-title {
+    text-style: bold;
+    color: $warning;
+    margin-bottom: 1;
+}
+
+#dialog-details {
+    margin-top: 1;
+}
+
+#dialog-buttons {
+    height: auto;
+    margin-top: 1;
+    align: center middle;
+}
+
+#dialog-buttons Button {
+    margin: 0 1;
+}
