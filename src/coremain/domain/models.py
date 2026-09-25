@@ -24,8 +24,17 @@ class Project:
 
     @classmethod
     def from_row(cls, r: sqlite3.Row) -> Project:
-        return cls(r["id"], r["root_path"], r["name"], r["vcs"], r["git_remote"], loads(r["profile_json"]),
-                   r["profile_hash"], r["trusted_config_hash"], r["created_at"])
+        return cls(
+            r["id"],
+            r["root_path"],
+            r["name"],
+            r["vcs"],
+            r["git_remote"],
+            loads(r["profile_json"]),
+            r["profile_hash"],
+            r["trusted_config_hash"],
+            r["created_at"],
+        )
 
 
 @dataclass
@@ -43,8 +52,18 @@ class Session:
 
     @classmethod
     def from_row(cls, r: sqlite3.Row) -> Session:
-        return cls(r["id"], r["project_id"], r["title"], r["status"], r["parent_session_id"], r["fork_checkpoint_id"],
-                   r["intent"], r["summary"], r["created_at"], r["updated_at"])
+        return cls(
+            r["id"],
+            r["project_id"],
+            r["title"],
+            r["status"],
+            r["parent_session_id"],
+            r["fork_checkpoint_id"],
+            r["intent"],
+            r["summary"],
+            r["created_at"],
+            r["updated_at"],
+        )
 
 
 @dataclass
@@ -59,8 +78,15 @@ class Message:
 
     @classmethod
     def from_row(cls, r: sqlite3.Row) -> Message:
-        return cls(r["id"], r["session_id"], r["task_id"], r["role"], r["content"], loads(r["meta_json"], {}),
-                   r["created_at"])
+        return cls(
+            r["id"],
+            r["session_id"],
+            r["task_id"],
+            r["role"],
+            r["content"],
+            loads(r["meta_json"], {}),
+            r["created_at"],
+        )
 
 
 @dataclass
@@ -98,16 +124,35 @@ class Task:
     @classmethod
     def from_row(cls, r: sqlite3.Row) -> Task:
         return cls(
-            id=r["id"], project_id=r["project_id"], session_id=r["session_id"], parent_task_id=r["parent_task_id"],
-            kind=r["kind"], title=r["title"], description=r["description"], status=TaskStatus(r["status"]),
-            status_reason=r["status_reason"], block_reason=r["block_reason"], mode=r["mode"],
-            decision=loads(r["decision_json"], {}), contract=loads(r["contract_json"], {}),
-            options=loads(r["options_json"], {}), priority=r["priority"], depth=r["depth"],
-            workspace_id=r["workspace_id"], result_summary=r["result_summary"], evidence_level=r["evidence_level"],
-            attempt_count=r["attempt_count"], recovered_count=r["recovered_count"],
-            cancel_requested_at=r["cancel_requested_at"], cancel_reason=r["cancel_reason"],
-            pause_requested_at=r["pause_requested_at"], version=r["version"], created_at=r["created_at"],
-            updated_at=r["updated_at"], completed_at=r["completed_at"], idempotency_key=r["idempotency_key"],
+            id=r["id"],
+            project_id=r["project_id"],
+            session_id=r["session_id"],
+            parent_task_id=r["parent_task_id"],
+            kind=r["kind"],
+            title=r["title"],
+            description=r["description"],
+            status=TaskStatus(r["status"]),
+            status_reason=r["status_reason"],
+            block_reason=r["block_reason"],
+            mode=r["mode"],
+            decision=loads(r["decision_json"], {}),
+            contract=loads(r["contract_json"], {}),
+            options=loads(r["options_json"], {}),
+            priority=r["priority"],
+            depth=r["depth"],
+            workspace_id=r["workspace_id"],
+            result_summary=r["result_summary"],
+            evidence_level=r["evidence_level"],
+            attempt_count=r["attempt_count"],
+            recovered_count=r["recovered_count"],
+            cancel_requested_at=r["cancel_requested_at"],
+            cancel_reason=r["cancel_reason"],
+            pause_requested_at=r["pause_requested_at"],
+            version=r["version"],
+            created_at=r["created_at"],
+            updated_at=r["updated_at"],
+            completed_at=r["completed_at"],
+            idempotency_key=r["idempotency_key"],
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -138,10 +183,25 @@ class Attempt:
 
     @classmethod
     def from_row(cls, r: sqlite3.Row) -> Attempt:
-        return cls(r["id"], r["task_id"], r["number"], AttemptStatus(r["status"]), r["runtime_id"], r["fence_token"],
-                   r["workspace_id"], r["workflow"], loads(r["checkpoint_json"], {}), r["base_fingerprint"],
-                   r["resumed_from"], r["error_class"], r["error_message"], loads(r["usage_json"], {}),
-                   r["started_at"], r["heartbeat_at"], r["ended_at"])
+        return cls(
+            r["id"],
+            r["task_id"],
+            r["number"],
+            AttemptStatus(r["status"]),
+            r["runtime_id"],
+            r["fence_token"],
+            r["workspace_id"],
+            r["workflow"],
+            loads(r["checkpoint_json"], {}),
+            r["base_fingerprint"],
+            r["resumed_from"],
+            r["error_class"],
+            r["error_message"],
+            loads(r["usage_json"], {}),
+            r["started_at"],
+            r["heartbeat_at"],
+            r["ended_at"],
+        )
 
     def to_dict(self) -> dict[str, Any]:
         d = dict(self.__dict__)

@@ -43,7 +43,9 @@ class Git:
             argv += ["-C", str(self.work_tree)]
         return argv + list(args)
 
-    async def run(self, *args: str, check: bool = True, input: bytes | None = None, timeout: float = 300) -> GitResult:
+    async def run(
+        self, *args: str, check: bool = True, input: bytes | None = None, timeout: float = 300
+    ) -> GitResult:
         env = dict(os.environ)
         env.update({"GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0", "LC_ALL": "C"})
         if self.index_file is not None:
@@ -63,8 +65,10 @@ class Git:
             raise WorkspaceError(f"git {' '.join(args[:3])} timed out") from exc
         result = GitResult(proc.returncode or 0, out, err.decode("utf-8", errors="replace").strip())
         if check and result.code != 0:
-            raise WorkspaceError(f"git {' '.join(args[:4])} failed: {result.stderr or result.text}",
-                                 details={"args": list(args[:8]), "code": result.code})
+            raise WorkspaceError(
+                f"git {' '.join(args[:4])} failed: {result.stderr or result.text}",
+                details={"args": list(args[:8]), "code": result.code},
+            )
         return result
 
     async def out(self, *args: str, check: bool = True) -> str:

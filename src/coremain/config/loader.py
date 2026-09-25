@@ -101,11 +101,15 @@ def restrict_untrusted(data: dict[str, Any], layer: str) -> tuple[dict[str, Any]
     for section in ("providers", "mcp", "exec", "research"):
         if section in data:
             data.pop(section)
-            warnings.append(f"{layer}: ignored [{section}] because the project is not trusted (run `core trust`)")
+            warnings.append(
+                f"{layer}: ignored [{section}] because the project is not trusted (run `core trust`)"
+            )
     perms = data.get("permissions")
     if isinstance(perms, dict):
         if "profile" in perms:
-            warnings.append(f"{layer}: permissions.profile honoured only if more restrictive (project not trusted)")
+            warnings.append(
+                f"{layer}: permissions.profile honoured only if more restrictive (project not trusted)"
+            )
             perms["__restrict_profile"] = perms.pop("profile")
         rules = perms.get("rules")
         if isinstance(rules, list):
@@ -178,7 +182,9 @@ def load_config(
     project_trusted: bool = False,
 ) -> EffectiveConfig:
     env = os.environ if env is None else env
-    layers: list[ConfigLayer] = [ConfigLayer("user", core_paths.config_file, read_toml(core_paths.config_file))]
+    layers: list[ConfigLayer] = [
+        ConfigLayer("user", core_paths.config_file, read_toml(core_paths.config_file))
+    ]
     warnings: list[str] = []
     cfg_hash: str | None = None
     if project_root is not None:

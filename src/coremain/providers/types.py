@@ -24,8 +24,13 @@ class ToolCall:
     parse_error: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {"id": self.id, "name": self.name, "arguments": self.arguments, "raw_arguments": self.raw_arguments,
-                "parse_error": self.parse_error}
+        return {
+            "id": self.id,
+            "name": self.name,
+            "arguments": self.arguments,
+            "raw_arguments": self.raw_arguments,
+            "parse_error": self.parse_error,
+        }
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> ToolCall:
@@ -54,16 +59,26 @@ class ChatMessage:
     def to_dict(self) -> dict[str, Any]:
         """Serializable form for checkpoints (provider_state is deliberately dropped)."""
         return {
-            "role": self.role, "content": self.content, "tool_calls": [t.to_dict() for t in self.tool_calls],
-            "tool_call_id": self.tool_call_id, "name": self.name, "is_error": self.is_error,
+            "role": self.role,
+            "content": self.content,
+            "tool_calls": [t.to_dict() for t in self.tool_calls],
+            "tool_call_id": self.tool_call_id,
+            "name": self.name,
+            "is_error": self.is_error,
             "images": [{"media_type": i.media_type, "data_b64": i.data_b64} for i in self.images],
         }
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> ChatMessage:
-        return cls(d["role"], d.get("content", ""), [ToolCall.from_dict(t) for t in d.get("tool_calls", [])],
-                   d.get("tool_call_id"), d.get("name"), d.get("is_error", False),
-                   [ImageBlock(i["media_type"], i["data_b64"]) for i in d.get("images", [])])
+        return cls(
+            d["role"],
+            d.get("content", ""),
+            [ToolCall.from_dict(t) for t in d.get("tool_calls", [])],
+            d.get("tool_call_id"),
+            d.get("name"),
+            d.get("is_error", False),
+            [ImageBlock(i["media_type"], i["data_b64"]) for i in d.get("images", [])],
+        )
 
 
 @dataclass
@@ -141,7 +156,9 @@ class ProviderStateUpdate:
     state: dict[str, Any]
 
 
-StreamEvent = TextDelta | ReasoningDelta | ToolCallStart | ToolCallDelta | UsageUpdate | Finish | ProviderStateUpdate
+StreamEvent = (
+    TextDelta | ReasoningDelta | ToolCallStart | ToolCallDelta | UsageUpdate | Finish | ProviderStateUpdate
+)
 
 
 @dataclass

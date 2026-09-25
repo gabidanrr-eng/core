@@ -39,8 +39,10 @@ class GitStatus(Tool):
 
 class GitDiff(Tool):
     name = "git_diff"
-    description = ("Show a diff. against='baseline' (default in task workspaces) shows exactly the changes made in this task; "
-                   "'HEAD' shows all uncommitted changes; any other value is treated as a git revision.")
+    description = (
+        "Show a diff. against='baseline' (default in task workspaces) shows exactly the changes made in this task; "
+        "'HEAD' shows all uncommitted changes; any other value is treated as a git revision."
+    )
     capability = Capability.GIT_READ
 
     class Input(ToolInput):
@@ -57,7 +59,9 @@ class GitDiff(Tool):
             patch = diff.patch
             if args.path:
                 chunks = patch.split("diff --git ")
-                patch = "".join("diff --git " + c for c in chunks if c and (f" a/{args.path}" in c.split("\n")[0]))
+                patch = "".join(
+                    "diff --git " + c for c in chunks if c and (f" a/{args.path}" in c.split("\n")[0])
+                )
             return ToolResult(True, patch or "no changes", data=diff.stats)
         rev = "HEAD" if args.against in ("baseline", "HEAD") else args.against
         cmd = ["diff", "--stat" if args.stat_only else "--no-color", rev]
@@ -95,7 +99,9 @@ class GitShow(Tool):
     async def run(self, ctx: ToolContext, args: Input) -> ToolResult:
         if args.rev.startswith("-"):
             raise ToolError("invalid revision", error_class="invalid_arguments")
-        return ToolResult(True, (await _out(ctx, "show", "--no-color", "--stat", "--patch", args.rev))[:60_000])
+        return ToolResult(
+            True, (await _out(ctx, "show", "--no-color", "--stat", "--patch", args.rev))[:60_000]
+        )
 
 
 class GitBlame(Tool):
@@ -110,13 +116,22 @@ class GitBlame(Tool):
 
     async def run(self, ctx: ToolContext, args: Input) -> ToolResult:
         _, rel = guard(ctx, args.path)
-        return ToolResult(True, (await _out(ctx, "blame", "--date=short", "-L", f"{args.start},{max(args.start, args.end)}", "--", rel)).strip())
+        return ToolResult(
+            True,
+            (
+                await _out(
+                    ctx, "blame", "--date=short", "-L", f"{args.start},{max(args.start, args.end)}", "--", rel
+                )
+            ).strip(),
+        )
 
 
 class GitCommit(Tool):
     name = "git_commit"
-    description = ("Create a local commit in the workspace (task branch in isolated workspaces). Never pushes. "
-                   "Only use when the task asks for commits.")
+    description = (
+        "Create a local commit in the workspace (task branch in isolated workspaces). Never pushes. "
+        "Only use when the task asks for commits."
+    )
     capability = Capability.GIT_WRITE
     side_effect = SideEffect.LOCAL
     read_only = False
@@ -136,7 +151,7 @@ class GitCommit(Tool):
         res = await git.run(*_IDENT, "commit", "--no-verify", "-q", "-m", args.message, check=False)
         if res.code != 0:
             raise ToolError(f"commit failed: {res.stderr or res.text}", error_class="git_failed")
-        sha = (await git.out("rev-parse", "--short", "HEAD"))
+        sha = await git.out("rev-parse", "--short", "HEAD")
         return ToolResult(True, f"committed {sha}: {args.message}", data={"commit": sha})
 
 

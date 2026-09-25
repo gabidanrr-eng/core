@@ -29,7 +29,7 @@ class CommandRisk(StrEnum):
     EXTERNAL = "external_side_effect"
     DESTRUCTIVE = "destructive"
     PRIVILEGED = "privileged"
-    SECRET_ACCESS = "secret_access"
+    SECRET_ACCESS = "secret_access"  # noqa: S105 - risk label, not a credential
     UNKNOWN = "unknown"
 
 
@@ -71,33 +71,271 @@ class CommandAnalysis:
 
 
 READ_ONLY = {
-    "ls", "cat", "head", "tail", "wc", "grep", "egrep", "fgrep", "rg", "ag", "fd", "tree", "pwd", "echo",
-    "printf", "which", "whereis", "type", "file", "stat", "du", "df", "diff", "cmp", "sort", "uniq", "cut",
-    "tr", "jq", "yq", "basename", "dirname", "realpath", "readlink", "date", "uname", "whoami", "id",
-    "true", "false", "test", "[", "sleep", "seq", "nl", "column", "od", "xxd", "hexdump", "strings",
-    "md5sum", "sha1sum", "sha256sum", "less", "more", "comm", "paste", "tac", "rev", "fold", "expand",
-    "hostname", "nproc", "free", "uptime", "ps", "lsof", "tokei", "cloc", "awk", "gawk",
+    "ls",
+    "cat",
+    "head",
+    "tail",
+    "wc",
+    "grep",
+    "egrep",
+    "fgrep",
+    "rg",
+    "ag",
+    "fd",
+    "tree",
+    "pwd",
+    "echo",
+    "printf",
+    "which",
+    "whereis",
+    "type",
+    "file",
+    "stat",
+    "du",
+    "df",
+    "diff",
+    "cmp",
+    "sort",
+    "uniq",
+    "cut",
+    "tr",
+    "jq",
+    "yq",
+    "basename",
+    "dirname",
+    "realpath",
+    "readlink",
+    "date",
+    "uname",
+    "whoami",
+    "id",
+    "true",
+    "false",
+    "test",
+    "[",
+    "sleep",
+    "seq",
+    "nl",
+    "column",
+    "od",
+    "xxd",
+    "hexdump",
+    "strings",
+    "md5sum",
+    "sha1sum",
+    "sha256sum",
+    "less",
+    "more",
+    "comm",
+    "paste",
+    "tac",
+    "rev",
+    "fold",
+    "expand",
+    "hostname",
+    "nproc",
+    "free",
+    "uptime",
+    "ps",
+    "lsof",
+    "tokei",
+    "cloc",
+    "awk",
+    "gawk",
 }
-TEST_PROGRAMS = {"pytest", "tox", "nox", "jest", "vitest", "mocha", "ava", "rspec", "phpunit", "ctest", "bats"}
+TEST_PROGRAMS = {
+    "pytest",
+    "tox",
+    "nox",
+    "jest",
+    "vitest",
+    "mocha",
+    "ava",
+    "rspec",
+    "phpunit",
+    "ctest",
+    "bats",
+}
 BUILD_PROGRAMS = {
-    "ruff", "black", "isort", "flake8", "pylint", "mypy", "pyright", "eslint", "prettier", "tsc", "gcc", "g++",
-    "cc", "clang", "clang++", "javac", "rustc", "gofmt", "shellcheck", "hadolint", "biome", "stylelint",
+    "ruff",
+    "black",
+    "isort",
+    "flake8",
+    "pylint",
+    "mypy",
+    "pyright",
+    "eslint",
+    "prettier",
+    "tsc",
+    "gcc",
+    "g++",
+    "cc",
+    "clang",
+    "clang++",
+    "javac",
+    "rustc",
+    "gofmt",
+    "shellcheck",
+    "hadolint",
+    "biome",
+    "stylelint",
 }
-INTERPRETERS = {"python", "python3", "node", "bun", "deno", "ruby", "perl", "php", "bash", "sh", "zsh", "lua", "Rscript"}
-MUTATING = {"mv", "cp", "mkdir", "touch", "ln", "rmdir", "install", "patch", "tee", "chmod", "unzip", "tar", "gzip", "gunzip", "zip"}
+INTERPRETERS = {
+    "python",
+    "python3",
+    "node",
+    "bun",
+    "deno",
+    "ruby",
+    "perl",
+    "php",
+    "bash",
+    "sh",
+    "zsh",
+    "lua",
+    "Rscript",
+}
+MUTATING = {
+    "mv",
+    "cp",
+    "mkdir",
+    "touch",
+    "ln",
+    "rmdir",
+    "install",
+    "patch",
+    "tee",
+    "chmod",
+    "unzip",
+    "tar",
+    "gzip",
+    "gunzip",
+    "zip",
+}
 NETWORK_PROGRAMS = {
-    "curl", "wget", "ssh", "scp", "sftp", "nc", "ncat", "netcat", "telnet", "ftp", "http", "https", "dig",
-    "nslookup", "ping", "traceroute", "aria2c", "socat", "rsync",
+    "curl",
+    "wget",
+    "ssh",
+    "scp",
+    "sftp",
+    "nc",
+    "ncat",
+    "netcat",
+    "telnet",
+    "ftp",
+    "http",
+    "https",
+    "dig",
+    "nslookup",
+    "ping",
+    "traceroute",
+    "aria2c",
+    "socat",
+    "rsync",
 }
-EXTERNAL_PROGRAMS = {"aws", "gcloud", "az", "kubectl", "helm", "terraform", "pulumi", "vercel", "netlify", "fly", "flyctl", "heroku", "twine"}
-PRIVILEGED_PROGRAMS = {"sudo", "su", "doas", "pkexec", "chroot", "mount", "umount", "systemctl", "service", "iptables", "useradd", "userdel", "usermod", "passwd", "visudo", "crontab", "launchctl"}
-DESTRUCTIVE_PROGRAMS = {"dd", "mkfs", "shred", "wipefs", "fdisk", "parted", "shutdown", "reboot", "halt", "poweroff", "killall", "pkill"}
+EXTERNAL_PROGRAMS = {
+    "aws",
+    "gcloud",
+    "az",
+    "kubectl",
+    "helm",
+    "terraform",
+    "pulumi",
+    "vercel",
+    "netlify",
+    "fly",
+    "flyctl",
+    "heroku",
+    "twine",
+}
+PRIVILEGED_PROGRAMS = {
+    "sudo",
+    "su",
+    "doas",
+    "pkexec",
+    "chroot",
+    "mount",
+    "umount",
+    "systemctl",
+    "service",
+    "iptables",
+    "useradd",
+    "userdel",
+    "usermod",
+    "passwd",
+    "visudo",
+    "crontab",
+    "launchctl",
+}
+DESTRUCTIVE_PROGRAMS = {
+    "dd",
+    "mkfs",
+    "shred",
+    "wipefs",
+    "fdisk",
+    "parted",
+    "shutdown",
+    "reboot",
+    "halt",
+    "poweroff",
+    "killall",
+    "pkill",
+}
 SECRET_PROGRAMS = {"printenv", "security", "keyctl", "secret-tool", "history"}
-PACKAGE_MANAGERS = {"npm", "npx", "pnpm", "yarn", "bun", "pip", "pip3", "uv", "poetry", "pipenv", "cargo", "go", "gem", "bundle", "composer", "mvn", "gradle", "dotnet", "apt", "apt-get", "brew", "conda", "mamba", "make"}
+PACKAGE_MANAGERS = {
+    "npm",
+    "npx",
+    "pnpm",
+    "yarn",
+    "bun",
+    "pip",
+    "pip3",
+    "uv",
+    "poetry",
+    "pipenv",
+    "cargo",
+    "go",
+    "gem",
+    "bundle",
+    "composer",
+    "mvn",
+    "gradle",
+    "dotnet",
+    "apt",
+    "apt-get",
+    "brew",
+    "conda",
+    "mamba",
+    "make",
+}
 _ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 _SEPARATORS = {";", "&&", "||", "|", "&", "(", ")", "|&", ";;", "\n"}
 _REDIRECTS = {">", ">>", "<", "<<", "<<<", ">&", "&>", "2>", "2>>", ">|"}
-_GIT_READ_SUBCOMMANDS = {"status", "diff", "log", "show", "blame", "branch", "rev-parse", "ls-files", "grep", "describe", "shortlog", "reflog", "cat-file", "ls-tree", "config", "remote", "tag", "stash", "worktree", "merge-base", "name-rev", "rev-list", "whatchanged"}
+_GIT_READ_SUBCOMMANDS = {
+    "status",
+    "diff",
+    "log",
+    "show",
+    "blame",
+    "branch",
+    "rev-parse",
+    "ls-files",
+    "grep",
+    "describe",
+    "shortlog",
+    "reflog",
+    "cat-file",
+    "ls-tree",
+    "config",
+    "remote",
+    "tag",
+    "stash",
+    "worktree",
+    "merge-base",
+    "name-rev",
+    "rev-list",
+    "whatchanged",
+}
 _GIT_REMOTE_SUBCOMMANDS = {"push", "send-email", "request-pull"}
 _GIT_NETWORK_SUBCOMMANDS = {"fetch", "pull", "clone", "ls-remote", "submodule"}
 
@@ -146,10 +384,14 @@ def _classify_segment(seg: list[str], analysis: CommandAnalysis, workspace: Path
                 analysis.add(CommandRisk.DESTRUCTIVE, f"writes to device {target}")
             elif ">" in w:
                 if _outside(workspace, target):
-                    analysis.add(CommandRisk.DESTRUCTIVE, f"redirects output outside the workspace ({target})")
+                    analysis.add(
+                        CommandRisk.DESTRUCTIVE, f"redirects output outside the workspace ({target})"
+                    )
                 elif target != "/dev/null":
                     analysis.add(CommandRisk.LOCAL_MUTATION, f"redirects output to {target}")
-    argv = [w for i, w in enumerate(words) if w not in _REDIRECTS and not (i > 0 and words[i - 1] in _REDIRECTS)]
+    argv = [
+        w for i, w in enumerate(words) if w not in _REDIRECTS and not (i > 0 and words[i - 1] in _REDIRECTS)
+    ]
     if not argv:
         return
     prog_path = argv[0]
@@ -225,7 +467,21 @@ def _classify_segment(seg: list[str], analysis: CommandAnalysis, workspace: Path
         return
     if prog == "gh":
         sub = " ".join(a for a in args[:2] if not a.startswith("-"))
-        if sub.startswith(("pr create", "pr merge", "pr close", "release", "repo create", "repo delete", "issue create", "issue close", "workflow run", "secret", "api")):
+        if sub.startswith(
+            (
+                "pr create",
+                "pr merge",
+                "pr close",
+                "release",
+                "repo create",
+                "repo delete",
+                "issue create",
+                "issue close",
+                "workflow run",
+                "secret",
+                "api",
+            )
+        ):
             analysis.add(CommandRisk.EXTERNAL, f"'gh {sub}' changes remote state")
         elif sub.startswith("auth"):
             analysis.add(CommandRisk.SECRET_ACCESS, "'gh auth' can reveal credentials")
@@ -263,7 +519,9 @@ def _classify_segment(seg: list[str], analysis: CommandAnalysis, workspace: Path
         analysis.add(CommandRisk.READ_ONLY, f"'{prog}' is read-only")
         return
     if prog in MUTATING:
-        if prog not in {"tar", "unzip"} and any(_outside(workspace, a) for a in args if not a.startswith("-")):
+        if prog not in {"tar", "unzip"} and any(
+            _outside(workspace, a) for a in args if not a.startswith("-")
+        ):
             analysis.add(CommandRisk.DESTRUCTIVE, f"'{prog}' writes outside the workspace")
         else:
             analysis.add(CommandRisk.LOCAL_MUTATION, f"'{prog}' modifies files")
@@ -300,7 +558,9 @@ def _classify_git(args: list[str], analysis: CommandAnalysis) -> None:
     elif sub in {"checkout", "restore"} and "." in flags:
         analysis.add(CommandRisk.DESTRUCTIVE, f"git {sub} . discards working-tree changes")
     elif sub == "branch" and flags & {"-D", "--delete", "-d", "-M", "-m"}:
-        analysis.add(CommandRisk.DESTRUCTIVE if "-D" in flags else CommandRisk.GIT_WRITE, "git branch deletion/rename")
+        analysis.add(
+            CommandRisk.DESTRUCTIVE if "-D" in flags else CommandRisk.GIT_WRITE, "git branch deletion/rename"
+        )
     elif sub == "stash" and tail[:1] in (["drop"], ["clear"]):
         analysis.add(CommandRisk.DESTRUCTIVE, "git stash drop/clear discards stashed work")
     elif sub == "config" and any("credential" in a for a in tail):
@@ -308,14 +568,17 @@ def _classify_git(args: list[str], analysis: CommandAnalysis) -> None:
     elif sub in _GIT_READ_SUBCOMMANDS and (
         sub not in {"branch", "tag", "stash", "worktree", "remote", "config"}
         or not tail
-        or tail[0] in {"list", "-l", "--list", "-a", "-v", "-vv", "show", "--show-current", "--get", "--get-regexp"}
+        or tail[0]
+        in {"list", "-l", "--list", "-a", "-v", "-vv", "show", "--show-current", "--get", "--get-regexp"}
     ):
         analysis.add(CommandRisk.GIT_READ, f"git {sub} (read-only)")
     else:
         analysis.add(CommandRisk.GIT_WRITE, f"git {sub or '?'} modifies the local repository")
 
 
-def _classify_package_manager(prog: str, args: list[str], analysis: CommandAnalysis, workspace: Path | None) -> None:
+def _classify_package_manager(
+    prog: str, args: list[str], analysis: CommandAnalysis, workspace: Path | None
+) -> None:
     positional = [a for a in args if not a.startswith("-")]
     sub = positional[0] if positional else ""
     sub2 = positional[1] if len(positional) > 1 else ""
@@ -351,7 +614,21 @@ def _classify_package_manager(prog: str, args: list[str], analysis: CommandAnaly
         idx = args.index(sub2) if sub2 in args else len(args)
         _classify_segment(args[idx:], analysis, workspace, 1)
         return
-    installs = {"install", "i", "ci", "add", "sync", "update", "upgrade", "get", "fetch", "download", "remove", "uninstall", "lock"}
+    installs = {
+        "install",
+        "i",
+        "ci",
+        "add",
+        "sync",
+        "update",
+        "upgrade",
+        "get",
+        "fetch",
+        "download",
+        "remove",
+        "uninstall",
+        "lock",
+    }
     if sub in installs or (prog == "uv" and sub == "pip" and sub2 in {"install", "sync", "uninstall"}):
         analysis.add(CommandRisk.PACKAGE_INSTALL, f"'{prog} {sub}' changes dependencies")
         analysis.add(CommandRisk.NETWORK, "dependency download")
@@ -365,13 +642,33 @@ def _classify_package_manager(prog: str, args: list[str], analysis: CommandAnaly
     if sub in {"build", "check", "vet", "fmt", "clippy", "lint", "tsc"}:
         analysis.add(CommandRisk.BUILD, f"'{prog} {sub}'")
         return
-    if sub in {"list", "ls", "show", "info", "tree", "outdated", "why", "env", "version", "--version", "doc", "help", "config"} or not sub:
+    if (
+        sub
+        in {
+            "list",
+            "ls",
+            "show",
+            "info",
+            "tree",
+            "outdated",
+            "why",
+            "env",
+            "version",
+            "--version",
+            "doc",
+            "help",
+            "config",
+        }
+        or not sub
+    ):
         analysis.add(CommandRisk.READ_ONLY, f"'{prog} {sub}'")
         return
     analysis.add(CommandRisk.UNKNOWN, f"'{prog} {sub}' (unclassified package-manager action)")
 
 
-def _classify_interpreter(prog: str, args: list[str], analysis: CommandAnalysis, workspace: Path | None, depth: int) -> None:
+def _classify_interpreter(
+    prog: str, args: list[str], analysis: CommandAnalysis, workspace: Path | None, depth: int
+) -> None:
     if not args:
         analysis.add(CommandRisk.LOCAL_EXEC, f"starts interactive '{prog}'")
         return
@@ -384,7 +681,17 @@ def _classify_interpreter(prog: str, args: list[str], analysis: CommandAnalysis,
             analysis.add(CommandRisk.TEST, f"'{prog} -m {module}'")
         elif module == "pip":
             _classify_package_manager("pip", args[2:], analysis, workspace)
-        elif module in {"mypy", "ruff", "black", "flake8", "pylint", "compileall", "py_compile", "isort", "pyright"}:
+        elif module in {
+            "mypy",
+            "ruff",
+            "black",
+            "flake8",
+            "pylint",
+            "compileall",
+            "py_compile",
+            "isort",
+            "pyright",
+        }:
             analysis.add(CommandRisk.BUILD, f"'{prog} -m {module}'")
         else:
             analysis.add(CommandRisk.LOCAL_EXEC, f"runs module '{module}'")
@@ -413,7 +720,9 @@ def _classify_interpreter(prog: str, args: list[str], analysis: CommandAnalysis,
         analysis.add(CommandRisk.LOCAL_EXEC, f"runs {prog} script '{script}'")
 
 
-def analyze_command(command: str | list[str], *, workspace: Path | None = None, _depth: int = 0) -> CommandAnalysis:
+def analyze_command(
+    command: str | list[str], *, workspace: Path | None = None, _depth: int = 0
+) -> CommandAnalysis:
     analysis = CommandAnalysis()
     if isinstance(command, list):
         segments, ok = [command], True

@@ -44,7 +44,9 @@ SENSITIVE_NAME_PATTERNS: tuple[str, ...] = (
     "auth.json",
     ".htpasswd",
 )
-SENSITIVE_DIR_NAMES: frozenset[str] = frozenset({".ssh", ".aws", ".gnupg", ".azure", ".kube", ".docker", ".gcloud"})
+SENSITIVE_DIR_NAMES: frozenset[str] = frozenset(
+    {".ssh", ".aws", ".gnupg", ".azure", ".kube", ".docker", ".gcloud"}
+)
 TEMPLATE_SUFFIXES = (".example", ".sample", ".template", ".dist", ".defaults", ".tmpl")
 
 

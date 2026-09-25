@@ -22,7 +22,13 @@ class SecretFinding:
 
 # (kind, pattern, group-with-secret)
 _PATTERNS: list[tuple[str, re.Pattern[str], int]] = [
-    ("private_key", re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|\Z)"), 0),
+    (
+        "private_key",
+        re.compile(
+            r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|\Z)"
+        ),
+        0,
+    ),
     ("aws_access_key", re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"), 0),
     ("github_token", re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9_]{30,}|github_pat_[A-Za-z0-9_]{22,})"), 0),
     ("anthropic_key", re.compile(r"\bsk-ant-[A-Za-z0-9_\-]{20,}"), 0),
@@ -31,7 +37,11 @@ _PATTERNS: list[tuple[str, re.Pattern[str], int]] = [
     ("stripe_key", re.compile(r"\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}"), 0),
     ("google_api_key", re.compile(r"\bAIza[0-9A-Za-z_\-]{35}"), 0),
     ("telegram_bot_token", re.compile(r"\b\d{8,10}:AA[A-Za-z0-9_\-]{33}\b"), 0),
-    ("discord_token", re.compile(r"\b[MNO][A-Za-z\d_\-]{23,27}\.[A-Za-z\d_\-]{6}\.[A-Za-z\d_\-]{27,40}\b"), 0),
+    (
+        "discord_token",
+        re.compile(r"\b[MNO][A-Za-z\d_\-]{23,27}\.[A-Za-z\d_\-]{6}\.[A-Za-z\d_\-]{27,40}\b"),
+        0,
+    ),
     ("jwt", re.compile(r"\beyJ[A-Za-z0-9_\-]{8,}\.eyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}"), 0),
     ("url_credentials", re.compile(r"(?<=://)[^/\s:@'\"]{1,64}:([^/\s@'\"]{3,128})(?=@)"), 1),
     ("bearer_token", re.compile(r"(?i)\bbearer\s+([A-Za-z0-9\-._~+/]{16,}=*)"), 1),

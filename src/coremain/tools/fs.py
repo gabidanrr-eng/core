@@ -24,10 +24,30 @@ from coremain.tools.base import SideEffect, Tool, ToolContext, ToolInput, ToolRe
 from coremain.tools.patching import PatchError, apply_hunks, parse_patch
 from coremain.util.jsonutil import sha256_hex
 
-IGNORED_DIRS = frozenset({
-    ".git", "node_modules", ".venv", "venv", "__pycache__", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".tox", "dist",
-    "build", "target", ".next", ".nuxt", ".cache", ".gradle", ".idea", "coverage", ".turbo", ".parcel-cache",
-})
+IGNORED_DIRS = frozenset(
+    {
+        ".git",
+        "node_modules",
+        ".venv",
+        "venv",
+        "__pycache__",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".tox",
+        "dist",
+        "build",
+        "target",
+        ".next",
+        ".nuxt",
+        ".cache",
+        ".gradle",
+        ".idea",
+        "coverage",
+        ".turbo",
+        ".parcel-cache",
+    }
+)
 MAX_READ_LINES = 2000
 
 
@@ -50,10 +70,14 @@ def _check_fresh(ctx: ToolContext, rel: str, path: Path) -> None:
     current = sha256_hex(path.read_bytes())
     last = ctx.read_hashes.get(rel)
     if last is None:
-        raise ToolError(f"read {rel} before modifying it (existing files must be read first)", error_class="read_required")
+        raise ToolError(
+            f"read {rel} before modifying it (existing files must be read first)", error_class="read_required"
+        )
     if last != current:
-        raise ToolError(f"{rel} changed since you last read it (a human or another process modified it); read it again",
-                        error_class="stale_read")
+        raise ToolError(
+            f"{rel} changed since you last read it (a human or another process modified it); read it again",
+            error_class="stale_read",
+        )
 
 
 def _atomic_write(path: Path, data: bytes) -> None:
@@ -73,7 +97,11 @@ def _numbered(lines: list[str], start: int) -> str:
 def _walk(root: Path, base: Path, extra_ignores: list[str]) -> list[Path]:
     out: list[Path] = []
     for dirpath, dirnames, filenames in os.walk(base):
-        dirnames[:] = sorted(d for d in dirnames if d not in IGNORED_DIRS and not any(fnmatch.fnmatch(d, p) for p in extra_ignores))
+        dirnames[:] = sorted(
+            d
+            for d in dirnames
+            if d not in IGNORED_DIRS and not any(fnmatch.fnmatch(d, p) for p in extra_ignores)
+        )
         for name in sorted(filenames):
             out.append(Path(dirpath) / name)
     return out
@@ -85,8 +113,10 @@ class _PathInput(ToolInput):
 
 class ReadFile(Tool):
     name = "read_file"
-    description = ("Read a text file from the workspace with line numbers. Use offset/limit for large files. "
-                   "You must read an existing file before editing it.")
+    description = (
+        "Read a text file from the workspace with line numbers. Use offset/limit for large files. "
+        "You must read an existing file before editing it."
+    )
     capability = Capability.FS_READ
 
     class Input(ToolInput):
@@ -110,11 +140,13 @@ class ReadFile(Tool):
             return ToolResult(True, f"[binary file {rel}, {len(data)} bytes]")
         text = data.decode("utf-8", errors="replace")
         lines = text.splitlines()
-        chunk = lines[args.offset - 1: args.offset - 1 + args.limit]
+        chunk = lines[args.offset - 1 : args.offset - 1 + args.limit]
         header = f"{rel} ({len(lines)} lines)"
         if args.offset > 1 or args.offset - 1 + args.limit < len(lines):
             header += f", showing {args.offset}-{args.offset - 1 + len(chunk)}"
-        return ToolResult(True, header + "\n" + _numbered(chunk, args.offset), data={"lines": len(lines), "path": rel})
+        return ToolResult(
+            True, header + "\n" + _numbered(chunk, args.offset), data={"lines": len(lines), "path": rel}
+        )
 
 
 class ListDir(Tool):
@@ -181,12 +213,16 @@ class GlobFiles(Tool):
         root = ctx.workspace.path.resolve()
         matches = []
         for f in files:
-            rel = f.resolve().relative_to(root).as_posix() if f.resolve().is_relative_to(root) else f.as_posix()
+            rel = (
+                f.resolve().relative_to(root).as_posix() if f.resolve().is_relative_to(root) else f.as_posix()
+            )
             if fnmatch.fnmatch(rel, args.pattern) or fnmatch.fnmatch(f.name, args.pattern):
                 matches.append(rel)
         shown = matches[: args.limit]
         more = f"\n… {len(matches) - len(shown)} more" if len(matches) > len(shown) else ""
-        return ToolResult(True, "\n".join(shown) + more if shown else "no matches", data={"count": len(matches)})
+        return ToolResult(
+            True, "\n".join(shown) + more if shown else "no matches", data={"count": len(matches)}
+        )
 
 
 class SearchText(Tool):
@@ -221,17 +257,21 @@ class SearchText(Tool):
             for pat in (".env", ".env.*", "*.pem", "*.key", "id_rsa*", "id_ed25519*", ".git"):
                 argv += ["--glob", f"!{pat}"]
             argv += ["--", args.pattern, str(base)]
-            proc = await asyncio.create_subprocess_exec(*argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            proc = await asyncio.create_subprocess_exec(
+                *argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+            )
             out, err = await proc.communicate()
             if proc.returncode not in (0, 1):
-                raise ToolError(f"search failed: {err.decode(errors='replace')[:300]}", error_class="search_failed")
+                raise ToolError(
+                    f"search failed: {err.decode(errors='replace')[:300]}", error_class="search_failed"
+                )
             for line in out.decode("utf-8", errors="replace").splitlines():
                 path_part = line.split(":", 1)[0]
                 try:
                     rel = Path(path_part).resolve().relative_to(root).as_posix()
                 except ValueError:
                     rel = path_part
-                results.append(rel + line[len(path_part):])
+                results.append(rel + line[len(path_part) :])
                 if len(results) >= args.max_results:
                     break
         else:
@@ -242,7 +282,11 @@ class SearchText(Tool):
                 raise ToolError(f"invalid regex: {exc}", error_class="invalid_arguments") from exc
             for f in await asyncio.to_thread(_walk, root, base, []):
                 rel = f.resolve().relative_to(root).as_posix()
-                if sensitive_reason(rel) or (args.glob and not fnmatch.fnmatch(f.name, args.glob) and not fnmatch.fnmatch(rel, args.glob)):
+                if sensitive_reason(rel) or (
+                    args.glob
+                    and not fnmatch.fnmatch(f.name, args.glob)
+                    and not fnmatch.fnmatch(rel, args.glob)
+                ):
                     continue
                 try:
                     data = f.read_bytes()
@@ -297,13 +341,17 @@ class WriteFile(Tool):
             elif line.startswith("-") and not line.startswith("---"):
                 removed += 1
         verb = "updated" if existed else "created"
-        return ToolResult(True, f"{verb} {rel} (+{added} -{removed} lines)", data={"path": rel, "created": not existed})
+        return ToolResult(
+            True, f"{verb} {rel} (+{added} -{removed} lines)", data={"path": rel, "created": not existed}
+        )
 
 
 class EditFile(Tool):
     name = "edit_file"
-    description = ("Replace an exact string in a file. old_string must match exactly once (including whitespace) unless "
-                   "replace_all is true. Read the file first.")
+    description = (
+        "Replace an exact string in a file. old_string must match exactly once (including whitespace) unless "
+        "replace_all is true. Read the file first."
+    )
     capability = Capability.FS_WRITE
     side_effect = SideEffect.LOCAL
     read_only = False
@@ -331,12 +379,20 @@ class EditFile(Tool):
             lines = text.splitlines()
             probe = args.old_string.strip().splitlines()[0] if args.old_string.strip() else args.old_string
             close = difflib.get_close_matches(probe, [line.strip() for line in lines], n=3, cutoff=0.6)
-            hint = ("closest lines: " + " | ".join(close)) if close else "re-read the file to get the exact text"
+            hint = (
+                ("closest lines: " + " | ".join(close)) if close else "re-read the file to get the exact text"
+            )
             raise ToolError(f"old_string not found in {rel}; {hint}", error_class="no_match")
         if count > 1 and not args.replace_all:
-            raise ToolError(f"old_string occurs {count} times in {rel}; add surrounding context or set replace_all=true",
-                            error_class="ambiguous_match")
-        new_text = text.replace(args.old_string, args.new_string) if args.replace_all else text.replace(args.old_string, args.new_string, 1)
+            raise ToolError(
+                f"old_string occurs {count} times in {rel}; add surrounding context or set replace_all=true",
+                error_class="ambiguous_match",
+            )
+        new_text = (
+            text.replace(args.old_string, args.new_string)
+            if args.replace_all
+            else text.replace(args.old_string, args.new_string, 1)
+        )
         data = new_text.encode("utf-8")
         await asyncio.to_thread(_atomic_write, path, data)
         ctx.read_hashes[rel] = sha256_hex(data)
@@ -345,14 +401,20 @@ class EditFile(Tool):
         line_no = new_text.count("\n", 0, max(idx, 0)) + 1
         new_lines = new_text.splitlines()
         start = max(1, line_no - 3)
-        snippet = _numbered(new_lines[start - 1: line_no + args.new_string.count("\n") + 3], start)
-        return ToolResult(True, f"edited {rel} ({count if args.replace_all else 1} replacement(s))\n{snippet}", data={"path": rel})
+        snippet = _numbered(new_lines[start - 1 : line_no + args.new_string.count("\n") + 3], start)
+        return ToolResult(
+            True,
+            f"edited {rel} ({count if args.replace_all else 1} replacement(s))\n{snippet}",
+            data={"path": rel},
+        )
 
 
 class ApplyPatch(Tool):
     name = "apply_patch"
-    description = ("Apply a multi-file patch atomically. Accepts a unified diff (---/+++/@@) or a '*** Begin Patch' envelope "
-                   "with '*** Add File:', '*** Update File:', '*** Delete File:' sections. All hunks must apply or nothing changes.")
+    description = (
+        "Apply a multi-file patch atomically. Accepts a unified diff (---/+++/@@) or a '*** Begin Patch' envelope "
+        "with '*** Add File:', '*** Update File:', '*** Delete File:' sections. All hunks must apply or nothing changes."
+    )
     capability = Capability.FS_WRITE
     side_effect = SideEffect.LOCAL
     read_only = False
@@ -382,14 +444,28 @@ class ApplyPatch(Tool):
         for fp in patches:
             path, rel = guard(ctx, fp.path)
             cap = Capability.FS_DELETE if fp.op == "delete" else Capability.FS_WRITE
-            decision = ctx.services.policy.evaluate(PolicyRequest(capability=cap, target=rel, workspace_root=ctx.workspace.path,
-                                                                  workspace_isolated=ctx.workspace.isolated, project_id=ctx.project_id,
-                                                                  session_id=ctx.session_id, task_id=ctx.task_id, tool=self.name))
+            decision = ctx.services.policy.evaluate(
+                PolicyRequest(
+                    capability=cap,
+                    target=rel,
+                    workspace_root=ctx.workspace.path,
+                    workspace_isolated=ctx.workspace.isolated,
+                    project_id=ctx.project_id,
+                    session_id=ctx.session_id,
+                    task_id=ctx.task_id,
+                    tool=self.name,
+                )
+            )
             if decision.decision != "allow":
-                raise ToolError(f"patch touches {rel}: {decision.decision} by policy ({decision.reason})", error_class="policy_denied")
+                raise ToolError(
+                    f"patch touches {rel}: {decision.decision} by policy ({decision.reason})",
+                    error_class="policy_denied",
+                )
             if fp.op == "add":
                 if path.exists():
-                    raise ToolError(f"cannot add {rel}: file already exists (use an update section)", error_class="exists")
+                    raise ToolError(
+                        f"cannot add {rel}: file already exists (use an update section)", error_class="exists"
+                    )
                 body = "\n".join(fp.content) + ("" if fp.no_newline_at_end else "\n")
                 planned.append((path, rel, body.encode("utf-8")))
             elif fp.op == "delete":
@@ -402,7 +478,9 @@ class ApplyPatch(Tool):
                     raise ToolError(f"cannot update {rel}: file does not exist", error_class="not_found")
                 _check_fresh(ctx, rel, path)
                 try:
-                    updated = apply_hunks(path.read_text(encoding="utf-8", errors="replace"), fp.hunks, path=rel)
+                    updated = apply_hunks(
+                        path.read_text(encoding="utf-8", errors="replace"), fp.hunks, path=rel
+                    )
                 except PatchError as exc:
                     raise ToolError(str(exc), error_class="patch_failed") from exc
                 planned.append((path, rel, updated.encode("utf-8")))
@@ -440,4 +518,13 @@ class DeleteFile(Tool):
         return ToolResult(True, f"deleted {rel}")
 
 
-FS_TOOLS: list[type[Tool]] = [ReadFile, ListDir, GlobFiles, SearchText, WriteFile, EditFile, ApplyPatch, DeleteFile]
+FS_TOOLS: list[type[Tool]] = [
+    ReadFile,
+    ListDir,
+    GlobFiles,
+    SearchText,
+    WriteFile,
+    EditFile,
+    ApplyPatch,
+    DeleteFile,
+]

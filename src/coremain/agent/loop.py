@@ -25,8 +25,10 @@ from coremain.tools.base import Tool, ToolContext
 from coremain.tools.executor import SuspendRequested, ToolExecutor
 from coremain.util.text import estimate_tokens, one_line, truncate_middle
 
-INTERRUPTED_RESULT = ("[interrupted: the runtime stopped before this tool call completed; its effects are unknown. "
-                      "Inspect the workspace state before continuing.]")
+INTERRUPTED_RESULT = (
+    "[interrupted: the runtime stopped before this tool call completed; its effects are unknown. "
+    "Inspect the workspace state before continuing.]"
+)
 
 
 @dataclass
@@ -79,14 +81,22 @@ def normalize_conversation(messages: list[ChatMessage]) -> list[ChatMessage]:
         if m.role == "assistant":
             for call in m.tool_calls:
                 if call.id not in answered:
-                    out.append(ChatMessage("tool", INTERRUPTED_RESULT, tool_call_id=call.id, name=call.name, is_error=True))
+                    out.append(
+                        ChatMessage(
+                            "tool", INTERRUPTED_RESULT, tool_call_id=call.id, name=call.name, is_error=True
+                        )
+                    )
                     answered.add(call.id)
     return out
 
 
 def conversation_tokens(messages: list[ChatMessage]) -> int:
-    return sum(estimate_tokens(m.content) + 20 * len(m.tool_calls) + sum(len(t.raw_arguments) // 4 for t in m.tool_calls)
-               for m in messages)
+    return sum(
+        estimate_tokens(m.content)
+        + 20 * len(m.tool_calls)
+        + sum(len(t.raw_arguments) // 4 for t in m.tool_calls)
+        for m in messages
+    )
 
 
 def compact(messages: list[ChatMessage], limit_tokens: int) -> tuple[list[ChatMessage], int]:
@@ -113,8 +123,13 @@ def compact(messages: list[ChatMessage], limit_tokens: int) -> tuple[list[ChatMe
 
 
 class AgentLoop:
-    def __init__(self, client: ModelClient, events: EventLog, budget: BudgetTracker,
-                 checkpoint: Callable[[list[ChatMessage], list[ToolCall]], None] | None = None):
+    def __init__(
+        self,
+        client: ModelClient,
+        events: EventLog,
+        budget: BudgetTracker,
+        checkpoint: Callable[[list[ChatMessage], list[ToolCall]], None] | None = None,
+    ):
         self.client = client
         self.events = events
         self.budget = budget
@@ -129,15 +144,38 @@ class AgentLoop:
         else:
             messages = [ChatMessage("system", spec.system), ChatMessage("user", spec.context_text)]
         usage = Usage()
-        state: dict[str, Any] = {"turns": 0, "tools": 0, "malformed": 0, "invalid": 0, "payload": None, "text": ""}
+        state: dict[str, Any] = {
+            "turns": 0,
+            "tools": 0,
+            "malformed": 0,
+            "invalid": 0,
+            "payload": None,
+            "text": "",
+        }
         nudged = False
         recent: deque[tuple[str, str]] = deque(maxlen=8)
         window = model.config.context_window
-        ids = {"project_id": ctx.project_id, "session_id": ctx.session_id, "task_id": ctx.task_id, "attempt_id": ctx.attempt_id}
+        ids = {
+            "project_id": ctx.project_id,
+            "session_id": ctx.session_id,
+            "task_id": ctx.task_id,
+            "attempt_id": ctx.attempt_id,
+        }
 
         def outcome(status: str, note: str | None = None, **kw: Any) -> AgentOutcome:
-            return AgentOutcome(status, state["payload"], state["text"], messages, state["turns"], usage, model.ref, state["tools"],
-                                state["malformed"], note=note, **kw)
+            return AgentOutcome(
+                status,
+                state["payload"],
+                state["text"],
+                messages,
+                state["turns"],
+                usage,
+                model.ref,
+                state["tools"],
+                state["malformed"],
+                note=note,
+                **kw,
+            )
 
         async def run_calls(calls: list[ToolCall], first_pre_approved: str | None) -> bool:
             for i, call in enumerate(calls):
@@ -145,12 +183,27 @@ class AgentLoop:
                 repeats = sum(1 for s in recent if s == signature)
                 recent.append(signature)
                 if repeats >= 2 and not call.name.startswith("submit_"):
-                    messages.append(ChatMessage("tool", "repeated identical call detected (3rd time); the result will not change. "
-                                                "Change your approach or finish.", tool_call_id=call.id, name=call.name, is_error=True))
-                    self.events.emit("agent.loop_detected", level="warning", data={"tool": call.name, "node": spec.node}, **ids)
+                    messages.append(
+                        ChatMessage(
+                            "tool",
+                            "repeated identical call detected (3rd time); the result will not change. "
+                            "Change your approach or finish.",
+                            tool_call_id=call.id,
+                            name=call.name,
+                            is_error=True,
+                        )
+                    )
+                    self.events.emit(
+                        "agent.loop_detected",
+                        level="warning",
+                        data={"tool": call.name, "node": spec.node},
+                        **ids,
+                    )
                     continue
                 try:
-                    result = await executor.execute(call, ctx, pre_approved=first_pre_approved if i == 0 else None)
+                    result = await executor.execute(
+                        call, ctx, pre_approved=first_pre_approved if i == 0 else None
+                    )
                 except SuspendRequested as sus:
                     sus.tool_call = call
                     remaining = calls[i:]
@@ -158,7 +211,11 @@ class AgentLoop:
                         self.checkpoint(messages, remaining)
                     raise _Suspended(sus, remaining) from None
                 state["tools"] += 1
-                messages.append(ChatMessage("tool", result.content, tool_call_id=call.id, name=call.name, is_error=not result.ok))
+                messages.append(
+                    ChatMessage(
+                        "tool", result.content, tool_call_id=call.id, name=call.name, is_error=not result.ok
+                    )
+                )
                 if call.name == spec.output_tool:
                     if result.ok and result.terminal:
                         state["payload"] = result.payload
@@ -177,36 +234,69 @@ class AgentLoop:
                 messages, elided = compact(messages, int(window * spec.compaction_threshold))
                 if elided:
                     self.events.emit("context.compacted", data={"node": spec.node, "elided": elided}, **ids)
-                request = ChatRequest(model=model.model_id, messages=messages, tools=tool_specs,
-                                      tool_choice="auto" if tool_specs else None)
+                request = ChatRequest(
+                    model=model.model_id,
+                    messages=messages,
+                    tools=tool_specs,
+                    tool_choice="auto" if tool_specs else None,
+                )
+
                 def on_delta(text: str, _events: EventLog = self.events) -> None:
-                    _events.ephemeral("model.delta", data={"text": text, "node": spec.node, "role": spec.role}, **ids)
+                    _events.ephemeral(
+                        "model.delta", data={"text": text, "node": spec.node, "role": spec.role}, **ids
+                    )
 
                 try:
-                    response = await self.client.complete(model, request, call_ctx, cancel=ctx.cancel, on_delta=on_delta)
+                    response = await self.client.complete(
+                        model, request, call_ctx, cancel=ctx.cancel, on_delta=on_delta
+                    )
                 except ProviderError as exc:
                     if exc.error_class != ProviderErrorClass.CONTEXT_OVERFLOW or len(messages) <= 3:
                         raise
                     messages, _ = compact(messages, int(window * 0.45))
-                    self.events.emit("context.overflow_recovery", level="warning", data={"node": spec.node}, **ids)
+                    self.events.emit(
+                        "context.overflow_recovery", level="warning", data={"node": spec.node}, **ids
+                    )
                     request.messages = messages
-                    response = await self.client.complete(model, request, call_ctx, cancel=ctx.cancel, on_delta=on_delta)
+                    response = await self.client.complete(
+                        model, request, call_ctx, cancel=ctx.cancel, on_delta=on_delta
+                    )
                 state["turns"] += 1
                 usage.add(response.usage)
                 cost, _ = compute_cost(model, response.usage)
                 self.budget.record(model.ref, response.usage.input_tokens, response.usage.output_tokens, cost)
                 ctx.model_call_id = response.model_call_id
                 state["malformed"] += sum(1 for c in response.tool_calls if c.parse_error)
-                messages.append(ChatMessage("assistant", response.text, list(response.tool_calls), provider_state=response.provider_state))
+                messages.append(
+                    ChatMessage(
+                        "assistant",
+                        response.text,
+                        list(response.tool_calls),
+                        provider_state=response.provider_state,
+                    )
+                )
                 if response.text.strip():
                     state["text"] = response.text
-                    self.events.emit("agent.message", data={"node": spec.node, "role": spec.role, "model": model.ref,
-                                                            "text": one_line(response.text, 600)}, **ids)
+                    self.events.emit(
+                        "agent.message",
+                        data={
+                            "node": spec.node,
+                            "role": spec.role,
+                            "model": model.ref,
+                            "text": one_line(response.text, 600),
+                        },
+                        **ids,
+                    )
                 if not response.tool_calls:
                     if spec.output_tool and not nudged:
                         nudged = True
-                        messages.append(ChatMessage("user", "Continue working with the tools. When the work is complete, you must call "
-                                                            f"`{spec.output_tool}` with the structured result."))
+                        messages.append(
+                            ChatMessage(
+                                "user",
+                                "Continue working with the tools. When the work is complete, you must call "
+                                f"`{spec.output_tool}` with the structured result.",
+                            )
+                        )
                         continue
                     if spec.output_tool:
                         return outcome("no_output", "model stopped without calling the output tool")
@@ -217,6 +307,8 @@ class AgentLoop:
                 if done:
                     return outcome("completed")
                 if state["invalid"] > spec.max_structured_repairs:
-                    return outcome("no_output", f"structured output invalid after {state['invalid']} attempts")
+                    return outcome(
+                        "no_output", f"structured output invalid after {state['invalid']} attempts"
+                    )
         except _Suspended as s:
             return outcome("suspended", suspend=s.signal, pending_calls=s.remaining)

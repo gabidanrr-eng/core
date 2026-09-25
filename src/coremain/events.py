@@ -56,7 +56,9 @@ Predicate = Callable[[Event], bool]
 
 
 class Subscription:
-    def __init__(self, bus: EventBus, loop: asyncio.AbstractEventLoop, predicate: Predicate | None, maxsize: int):
+    def __init__(
+        self, bus: EventBus, loop: asyncio.AbstractEventLoop, predicate: Predicate | None, maxsize: int
+    ):
         self._bus = bus
         self._loop = loop
         self._predicate = predicate
@@ -165,7 +167,9 @@ class EventLog:
                 "VALUES (?,?,?,?,?,?,?,?,?)",
                 (ts, kind, level, project_id, session_id, task_id, attempt_id, actor, dumps(payload)),
             )
-            event = Event(kind, ts, cur.lastrowid, level, project_id, session_id, task_id, attempt_id, actor, payload)
+            event = Event(
+                kind, ts, cur.lastrowid, level, project_id, session_id, task_id, attempt_id, actor, payload
+            )
             self.db.after_commit(lambda: self.bus.publish(event))
         return event
 
@@ -180,19 +184,39 @@ class EventLog:
         data: dict[str, Any] | None = None,
     ) -> None:
         self.bus.publish(
-            Event(kind, self.clock.now(), None, "debug", project_id, session_id, task_id, attempt_id, "runtime",
-                  self.redactor.redact_obj(data or {}), durable=False)
+            Event(
+                kind,
+                self.clock.now(),
+                None,
+                "debug",
+                project_id,
+                session_id,
+                task_id,
+                attempt_id,
+                "runtime",
+                self.redactor.redact_obj(data or {}),
+                durable=False,
+            )
         )
 
     @staticmethod
     def _row(row: Any) -> Event:
         return Event(
-            kind=row["kind"], ts=row["ts"], seq=row["seq"], level=row["level"], project_id=row["project_id"],
-            session_id=row["session_id"], task_id=row["task_id"], attempt_id=row["attempt_id"],
-            actor=row["actor"], data=loads(row["data_json"], {}),
+            kind=row["kind"],
+            ts=row["ts"],
+            seq=row["seq"],
+            level=row["level"],
+            project_id=row["project_id"],
+            session_id=row["session_id"],
+            task_id=row["task_id"],
+            attempt_id=row["attempt_id"],
+            actor=row["actor"],
+            data=loads(row["data_json"], {}),
         )
 
-    def since(self, seq: int, *, task_id: str | None = None, session_id: str | None = None, limit: int = 1000) -> list[Event]:
+    def since(
+        self, seq: int, *, task_id: str | None = None, session_id: str | None = None, limit: int = 1000
+    ) -> list[Event]:
         sql = "SELECT * FROM events WHERE seq > ?"
         params: list[Any] = [seq]
         if task_id:
@@ -205,7 +229,9 @@ class EventLog:
         params.append(limit)
         return [self._row(r) for r in self.db.query(sql, params)]
 
-    def for_task(self, task_id: str, *, kinds: tuple[str, ...] | None = None, limit: int = 5000) -> list[Event]:
+    def for_task(
+        self, task_id: str, *, kinds: tuple[str, ...] | None = None, limit: int = 5000
+    ) -> list[Event]:
         sql = "SELECT * FROM events WHERE task_id = ?"
         params: list[Any] = [task_id]
         if kinds:

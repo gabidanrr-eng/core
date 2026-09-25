@@ -139,19 +139,31 @@ class PolicyEngine:
     def _invariants(self, req: PolicyRequest) -> PolicyDecision | None:
         cap = req.capability
         if cap == Capability.CONFIG_WRITE:
-            return PolicyDecision("deny", "models cannot change Core Main configuration or policy", "invariant")
-        if cap in (Capability.FS_READ, Capability.FS_WRITE, Capability.FS_DELETE) and req.workspace_root is not None:
+            return PolicyDecision(
+                "deny", "models cannot change Core Main configuration or policy", "invariant"
+            )
+        if (
+            cap in (Capability.FS_READ, Capability.FS_WRITE, Capability.FS_DELETE)
+            and req.workspace_root is not None
+        ):
             target = Path(req.target)
             if not target.is_absolute():
                 target = req.workspace_root / target
             if not is_within(req.workspace_root, target):
                 return PolicyDecision("deny", f"'{req.target}' is outside the workspace", "invariant")
             if cap != Capability.FS_READ and self._protected(target):
-                return PolicyDecision("deny", "Core Main configuration, policy and state files are protected", "invariant")
+                return PolicyDecision(
+                    "deny", "Core Main configuration, policy and state files are protected", "invariant"
+                )
             reason = sensitive_reason(req.target, self.config.sensitive_paths)
             if reason and not self._has_grant(Capability.SECRETS, req):
-                return PolicyDecision("deny", f"sensitive file ({reason}); grant secrets.read explicitly to allow", "invariant")
-        if cap in (Capability.NET_HTTP, Capability.NET_DOCS, Capability.BROWSER) and self.config.network.offline:
+                return PolicyDecision(
+                    "deny", f"sensitive file ({reason}); grant secrets.read explicitly to allow", "invariant"
+                )
+        if (
+            cap in (Capability.NET_HTTP, Capability.NET_DOCS, Capability.BROWSER)
+            and self.config.network.offline
+        ):
             domain = _domain(req.target)
             if domain not in {"localhost", "127.0.0.1", "::1", ""}:
                 return PolicyDecision("deny", "offline mode: network access disabled", "invariant")
@@ -164,13 +176,31 @@ class PolicyEngine:
         if cap == Capability.EXEC and req.analysis is not None:
             risks = req.analysis.risks
             if CommandRisk.SECRET_ACCESS in risks and not self._has_grant(Capability.SECRETS, req):
-                return PolicyDecision("deny", "command may expose secrets: " + "; ".join(req.analysis.reasons), "invariant",
-                                      CommandRisk.SECRET_ACCESS.value)
-            if CommandRisk.DESTRUCTIVE in risks and any("outside the workspace" in r for r in req.analysis.reasons):
-                return PolicyDecision("deny", "destructive operation outside the workspace", "invariant", CommandRisk.DESTRUCTIVE.value)
+                return PolicyDecision(
+                    "deny",
+                    "command may expose secrets: " + "; ".join(req.analysis.reasons),
+                    "invariant",
+                    CommandRisk.SECRET_ACCESS.value,
+                )
+            if CommandRisk.DESTRUCTIVE in risks and any(
+                "outside the workspace" in r for r in req.analysis.reasons
+            ):
+                return PolicyDecision(
+                    "deny",
+                    "destructive operation outside the workspace",
+                    "invariant",
+                    CommandRisk.DESTRUCTIVE.value,
+                )
             if self.config.network.offline and CommandRisk.NETWORK in risks:
-                return PolicyDecision("deny", "offline mode: command performs network access", "invariant", CommandRisk.NETWORK.value)
-            if req.workspace_root is not None and any(self._mentions_protected(a) for a in req.target.split()):
+                return PolicyDecision(
+                    "deny",
+                    "offline mode: command performs network access",
+                    "invariant",
+                    CommandRisk.NETWORK.value,
+                )
+            if req.workspace_root is not None and any(
+                self._mentions_protected(a) for a in req.target.split()
+            ):
                 return PolicyDecision("deny", "command references protected Core Main state", "invariant")
         return None
 
@@ -196,7 +226,10 @@ class PolicyEngine:
         )
 
     def _has_grant(self, capability: str, req: PolicyRequest) -> bool:
-        return any(r["decision"] == "allow" and fnmatch.fnmatch(req.target, r["pattern"]) for r in self._grant_rows(capability, req))
+        return any(
+            r["decision"] == "allow" and fnmatch.fnmatch(req.target, r["pattern"])
+            for r in self._grant_rows(capability, req)
+        )
 
     def _grant(self, req: PolicyRequest) -> PolicyDecision | None:
         rows = [r for r in self._grant_rows(req.capability, req) if fnmatch.fnmatch(req.target, r["pattern"])]
@@ -204,12 +237,24 @@ class PolicyEngine:
             return None
         deny = next((r for r in rows if r["decision"] == "deny"), None)
         chosen = deny or rows[0]
-        if chosen["decision"] == "allow" and req.analysis is not None and CommandRisk.PRIVILEGED in req.analysis.risks and chosen["pattern"] == "*":
+        if (
+            chosen["decision"] == "allow"
+            and req.analysis is not None
+            and CommandRisk.PRIVILEGED in req.analysis.risks
+            and chosen["pattern"] == "*"
+        ):
             return None  # blanket grants never cover privileged commands; a specific pattern is required
         if chosen["uses_remaining"] is not None and self.db is not None:
-            self.db.execute("UPDATE permission_grants SET uses_remaining = uses_remaining - 1 WHERE id = ?", (chosen["id"],))
-        return PolicyDecision(chosen["decision"], chosen["reason"] or f"granted by {chosen['granted_by']}", "grant",
-                              grant_id=chosen["id"])
+            self.db.execute(
+                "UPDATE permission_grants SET uses_remaining = uses_remaining - 1 WHERE id = ?",
+                (chosen["id"],),
+            )
+        return PolicyDecision(
+            chosen["decision"],
+            chosen["reason"] or f"granted by {chosen['granted_by']}",
+            "grant",
+            grant_id=chosen["id"],
+        )
 
     def grant(
         self,
@@ -234,16 +279,30 @@ class PolicyEngine:
         self.db.execute(
             "INSERT INTO permission_grants(id, project_id, session_id, task_id, capability, pattern, decision, granted_by, reason, "
             "created_at, expires_at, uses_remaining) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-            (grant_id, project_id, session_id, task_id, capability, pattern, decision, granted_by, reason, now,
-             now + ttl_s if ttl_s else None, uses),
+            (
+                grant_id,
+                project_id,
+                session_id,
+                task_id,
+                capability,
+                pattern,
+                decision,
+                granted_by,
+                reason,
+                now,
+                now + ttl_s if ttl_s else None,
+                uses,
+            ),
         )
         return grant_id
 
     def revoke(self, grant_id: str) -> bool:
         if self.db is None:
             return False
-        cur = self.db.execute("UPDATE permission_grants SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL",
-                              (self.clock.now(), grant_id))
+        cur = self.db.execute(
+            "UPDATE permission_grants SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL",
+            (self.clock.now(), grant_id),
+        )
         return cur.rowcount == 1
 
     def active_grants(self, project_id: str | None = None) -> list[dict[str, Any]]:
@@ -263,15 +322,28 @@ class PolicyEngine:
         for rule in self.config.rules:
             if not fnmatch.fnmatch(req.capability, rule.capability):
                 continue
-            target = _domain(req.target) if req.capability in (Capability.NET_HTTP, Capability.NET_DOCS) and "/" not in rule.pattern else req.target
+            target = (
+                _domain(req.target)
+                if req.capability in (Capability.NET_HTTP, Capability.NET_DOCS) and "/" not in rule.pattern
+                else req.target
+            )
             if not fnmatch.fnmatch(target, rule.pattern):
                 continue
-            candidate = PolicyDecision(rule.decision, rule.reason or f"rule {rule.capability}:{rule.pattern}", "rule")
+            candidate = PolicyDecision(
+                rule.decision, rule.reason or f"rule {rule.capability}:{rule.pattern}", "rule"
+            )
             if best is None or _RANK[candidate.decision] > _RANK[best.decision]:
                 best = candidate
-        if (best is not None and best.decision == "allow" and req.analysis is not None
-                and CommandRisk.PRIVILEGED in req.analysis.risks
-                and not any(r.decision == "allow" and r.pattern != "*" and fnmatch.fnmatch(req.target, r.pattern) for r in self.config.rules)):
+        if (
+            best is not None
+            and best.decision == "allow"
+            and req.analysis is not None
+            and CommandRisk.PRIVILEGED in req.analysis.risks
+            and not any(
+                r.decision == "allow" and r.pattern != "*" and fnmatch.fnmatch(req.target, r.pattern)
+                for r in self.config.rules
+            )
+        ):
             return None
         return best
 
@@ -291,23 +363,39 @@ class PolicyEngine:
         if cap == Capability.FS_READ_SENSITIVE:
             return d("deny", "sensitive files require an explicit grant")
         if profile == "read-only":
-            if cap == Capability.EXEC and req.analysis is not None and req.analysis.risks <= {CommandRisk.READ_ONLY, CommandRisk.GIT_READ}:
+            if (
+                cap == Capability.EXEC
+                and req.analysis is not None
+                and req.analysis.risks <= {CommandRisk.READ_ONLY, CommandRisk.GIT_READ}
+            ):
                 return d("allow", "read-only command", req.analysis.max_risk.value)
-            if cap == Capability.NET_DOCS and domain_matches(_domain(req.target), self.config.network.allow_domains):
+            if cap == Capability.NET_DOCS and domain_matches(
+                _domain(req.target), self.config.network.allow_domains
+            ):
                 return d("allow", "documentation lookup on an allowed domain")
             if cap == Capability.MCP and req.mcp_trusted and req.mcp_annotations.get("readOnlyHint"):
                 return d("allow", "read-only tool on a trusted MCP server")
             return d("deny", "read-only permission profile")
         if cap == Capability.FS_WRITE:
-            return d("allow", "local file change inside the task workspace" + ("" if iso else " (direct mode)"))
+            return d(
+                "allow", "local file change inside the task workspace" + ("" if iso else " (direct mode)")
+            )
         if cap == Capability.FS_DELETE:
-            return d("allow" if iso else "ask", "file deletion" + ("" if iso else " in the canonical workspace"))
+            return d(
+                "allow" if iso else "ask", "file deletion" + ("" if iso else " in the canonical workspace")
+            )
         if cap == Capability.GIT_WRITE:
             return d("allow" if iso or profile == "autonomous" else "ask", "local git mutation")
         if cap == Capability.GIT_REMOTE:
-            return d("ask" if profile == "autonomous" else "deny", "remote git operations need explicit authorization")
+            return d(
+                "ask" if profile == "autonomous" else "deny",
+                "remote git operations need explicit authorization",
+            )
         if cap == Capability.EXTERNAL:
-            return d("ask" if profile == "autonomous" else "deny", "external side effects need explicit authorization")
+            return d(
+                "ask" if profile == "autonomous" else "deny",
+                "external side effects need explicit authorization",
+            )
         if cap in (Capability.NET_DOCS, Capability.NET_HTTP):
             domain = _domain(req.target)
             if domain_matches(domain, self.config.network.allow_domains) or profile == "autonomous":
@@ -326,7 +414,11 @@ class PolicyEngine:
                 return d("allow", "trusted MCP server")
             if ann.get("readOnlyHint") and not ann.get("openWorldHint"):
                 return d("allow", "read-only MCP tool")
-            return d("ask", "MCP tool with possible side effects" + ("" if req.mcp_trusted else " on an untrusted server"))
+            return d(
+                "ask",
+                "MCP tool with possible side effects"
+                + ("" if req.mcp_trusted else " on an untrusted server"),
+            )
         if cap == Capability.EXEC:
             return self._exec_default(req, profile, iso)
         return d("ask", f"no default for capability {cap}")
@@ -342,10 +434,14 @@ class PolicyEngine:
         if CommandRisk.PRIVILEGED in risks:
             return PolicyDecision("deny", f"privileged command ({why})", src, top)
         if CommandRisk.EXTERNAL in risks:
-            return PolicyDecision("ask" if profile == "autonomous" else "deny", f"external side effect ({why})", src, top)
+            return PolicyDecision(
+                "ask" if profile == "autonomous" else "deny", f"external side effect ({why})", src, top
+            )
         if CommandRisk.DESTRUCTIVE in risks:
             if profile == "autonomous" and iso:
-                return PolicyDecision("allow", f"destructive but confined to an isolated workspace ({why})", src, top)
+                return PolicyDecision(
+                    "allow", f"destructive but confined to an isolated workspace ({why})", src, top
+                )
             return PolicyDecision("ask" if iso else "deny", f"destructive command ({why})", src, top)
         if profile == "autonomous":
             return PolicyDecision("allow", f"autonomous profile ({why})", src, top)

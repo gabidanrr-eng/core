@@ -15,7 +15,9 @@ def estimate_tokens(text: str) -> int:
     return max(1, int(len(text) / 3.6) + 1)
 
 
-def truncate_middle(text: str, max_chars: int, *, marker: str = "\n… [{omitted} characters omitted] …\n") -> str:
+def truncate_middle(
+    text: str, max_chars: int, *, marker: str = "\n… [{omitted} characters omitted] …\n"
+) -> str:
     if len(text) <= max_chars:
         return text
     keep = max(0, max_chars - 64)
@@ -36,7 +38,7 @@ def identifier_terms(text: str, *, limit: int = 20000) -> str:
     """Expand identifiers (camelCase/snake_case) into searchable words for lexical retrieval."""
     seen: set[str] = set()
     out: list[str] = []
-    for match in _WORD.finditer(text[:limit * 8]):
+    for match in _WORD.finditer(text[: limit * 8]):
         for part in split_identifier(match.group(0)):
             if len(part) > 1 and part not in seen:
                 seen.add(part)
@@ -47,7 +49,89 @@ def identifier_terms(text: str, *, limit: int = 20000) -> str:
 
 
 STOPWORDS = frozenset(
-    ["a", "an", "the", "and", "or", "of", "to", "in", "on", "for", "with", "without", "by", "is", "are", "was", "were", "be", "been", "it", "this", "that", "these", "those", "how", "what", "why", "where", "when", "which", "who", "can", "could", "should", "would", "will", "please", "make", "sure", "do", "does", "did", "i", "we", "you", "me", "my", "our", "your", "us", "from", "into", "at", "as", "about", "all", "any", "some", "there", "here", "then", "than", "so", "if", "not", "no", "yes", "just", "use", "using", "get", "set", "have", "has", "had", "let", "lets", "also", "more", "most", "very"]
+    [
+        "a",
+        "an",
+        "the",
+        "and",
+        "or",
+        "of",
+        "to",
+        "in",
+        "on",
+        "for",
+        "with",
+        "without",
+        "by",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "it",
+        "this",
+        "that",
+        "these",
+        "those",
+        "how",
+        "what",
+        "why",
+        "where",
+        "when",
+        "which",
+        "who",
+        "can",
+        "could",
+        "should",
+        "would",
+        "will",
+        "please",
+        "make",
+        "sure",
+        "do",
+        "does",
+        "did",
+        "i",
+        "we",
+        "you",
+        "me",
+        "my",
+        "our",
+        "your",
+        "us",
+        "from",
+        "into",
+        "at",
+        "as",
+        "about",
+        "all",
+        "any",
+        "some",
+        "there",
+        "here",
+        "then",
+        "than",
+        "so",
+        "if",
+        "not",
+        "no",
+        "yes",
+        "just",
+        "use",
+        "using",
+        "get",
+        "set",
+        "have",
+        "has",
+        "had",
+        "let",
+        "lets",
+        "also",
+        "more",
+        "most",
+        "very",
+    ]
 )
 
 

@@ -66,8 +66,18 @@ RUNTIME_HEARTBEAT_S = 15.0
 
 
 class CoreRuntime:
-    def __init__(self, *, paths: CorePaths, db: Database, project_root: Path | None, overrides: Mapping[str, Any] | None,
-                 env: Mapping[str, str] | None, clock: Clock, mode: str, transports: dict[str, httpx.AsyncBaseTransport] | None):
+    def __init__(
+        self,
+        *,
+        paths: CorePaths,
+        db: Database,
+        project_root: Path | None,
+        overrides: Mapping[str, Any] | None,
+        env: Mapping[str, str] | None,
+        clock: Clock,
+        mode: str,
+        transports: dict[str, httpx.AsyncBaseTransport] | None,
+    ):
         self.paths = paths
         self.db = db
         self.clock = clock
@@ -78,23 +88,43 @@ class CoreRuntime:
         self.events = EventLog(db, self.bus, self.redactor, clock)
         self.projects = ProjectService(db, self.events, clock)
         self.sessions = SessionService(db, self.events, clock)
-        self.project: Project | None = self.projects.ensure(project_root) if project_root is not None else None
+        self.project: Project | None = (
+            self.projects.ensure(project_root) if project_root is not None else None
+        )
         self.project_root = Path(self.project.root_path) if self.project else None
         cfg_hash = project_config_hash(self.project_root) if self.project_root else None
         self.project_trusted = bool(self.project and ProjectService.is_trusted(self.project, cfg_hash))
-        self.effective: EffectiveConfig = load_config(paths, self.project_root, overrides=overrides, env=self.env,
-                                                      project_trusted=self.project_trusted)
+        self.effective: EffectiveConfig = load_config(
+            paths, self.project_root, overrides=overrides, env=self.env, project_trusted=self.project_trusted
+        )
         self.config = self.effective.config
         self.runtime_id = new_id("rt", now=clock.now())
         self.credentials = CredentialStore(paths.credentials_file)
-        self.registry = ProviderRegistry(self.config, self.credentials, self.redactor, env=self.env, transports=transports)
+        self.registry = ProviderRegistry(
+            self.config, self.credentials, self.redactor, env=self.env, transports=transports
+        )
         self.stats = ModelStats(db)
-        self.router = Router(self.registry, self.config.routing, self.stats, heuristics=self._active_heuristics("routing"),
-                             clock_now=clock.now)
+        self.router = Router(
+            self.registry,
+            self.config.routing,
+            self.stats,
+            heuristics=self._active_heuristics("routing"),
+            clock_now=clock.now,
+        )
         self.client = ModelClient(self.registry, db, self.events, clock, self.config)
         # Task workspaces live under the data dir, so protect the specific state locations only.
-        protected = [paths.config_dir, paths.db_path, Path(f"{paths.db_path}-wal"), Path(f"{paths.db_path}-shm"), paths.artifacts_dir,
-                     paths.snapshots_dir, paths.backups_dir, paths.data_dir / "indexes", paths.imported_skills_dir, paths.logs_dir]
+        protected = [
+            paths.config_dir,
+            paths.db_path,
+            Path(f"{paths.db_path}-wal"),
+            Path(f"{paths.db_path}-shm"),
+            paths.artifacts_dir,
+            paths.snapshots_dir,
+            paths.backups_dir,
+            paths.data_dir / "indexes",
+            paths.imported_skills_dir,
+            paths.logs_dir,
+        ]
         if self.project_root is not None:
             pp = ProjectPaths(self.project_root)
             protected += [pp.config_file, pp.local_config_file, pp.core_dir / "policy.toml"]
@@ -103,23 +133,45 @@ class CoreRuntime:
         self.leases = LeaseManager(db, clock)
         self.tasks = TaskService(db, self.events, self.leases, clock)
         self.artifacts = ArtifactStore(db, paths.artifacts_dir, self.redactor, clock)
-        self.workspaces = WorkspaceManager(db, self.events, self.artifacts, paths, clock, self.config.workspace)
+        self.workspaces = WorkspaceManager(
+            db, self.events, self.artifacts, paths, clock, self.config.workspace
+        )
         self.evidence = EvidenceEngine(db, self.events, self.leases, clock)
         self.reviews = ReviewStore(db, self.events, clock)
         self.memory = MemoryStore(db, self.events, clock, self.config.memory)
         self.decisions = DecisionStore(db, self.events, clock)
-        roots: list[tuple[str, Path]] = [("builtin", builtin_skills_dir()), ("imported", paths.imported_skills_dir),
-                                         ("user", paths.user_skills_dir), ("user", Path(self.env.get("HOME", "~")).expanduser() / ".agents" / "skills")]
+        roots: list[tuple[str, Path]] = [
+            ("builtin", builtin_skills_dir()),
+            ("imported", paths.imported_skills_dir),
+            ("user", paths.user_skills_dir),
+            ("user", Path(self.env.get("HOME", "~")).expanduser() / ".agents" / "skills"),
+        ]
         if self.project_root is not None:
-            roots += [("project", ProjectPaths(self.project_root).skills_dir), ("project", self.project_root / ".agents" / "skills")]
+            roots += [
+                ("project", ProjectPaths(self.project_root).skills_dir),
+                ("project", self.project_root / ".agents" / "skills"),
+            ]
         self.skills = SkillRegistry(db, self.config.skills, roots, clock, self.events)
         self.index = CodeIndex(db, self.config.intel, clock)
         self.compiler = ContextCompiler(self.index, self.config.context, self.redactor)
-        self.processes = ProcessRunner(db, clock, self.runtime_id, max_output_bytes=self.config.exec.max_output_bytes,
-                                       kill_grace_s=self.config.exec.kill_grace_s, max_memory_mb=self.config.exec.max_memory_mb,
-                                       spool_dir=paths.tmp_dir)
-        self.verifier = VerificationRunner(config=self.config, processes=self.processes, evidence=self.evidence,
-                                           artifacts=self.artifacts, workspaces=self.workspaces, policy=self.policy, redactor=self.redactor)
+        self.processes = ProcessRunner(
+            db,
+            clock,
+            self.runtime_id,
+            max_output_bytes=self.config.exec.max_output_bytes,
+            kill_grace_s=self.config.exec.kill_grace_s,
+            max_memory_mb=self.config.exec.max_memory_mb,
+            spool_dir=paths.tmp_dir,
+        )
+        self.verifier = VerificationRunner(
+            config=self.config,
+            processes=self.processes,
+            evidence=self.evidence,
+            artifacts=self.artifacts,
+            workspaces=self.workspaces,
+            policy=self.policy,
+            redactor=self.redactor,
+        )
         self.failures = FailureRecorder(db, self.events, clock)
         self.approval_handler: ApprovalHandler | None = None
         self.input_handler: InputHandler | None = None
@@ -136,22 +188,41 @@ class CoreRuntime:
 
     # ------------------------------------------------------------------ lifecycle
     @classmethod
-    def open(cls, *, project_root: Path | None = None, paths: CorePaths | None = None, overrides: Mapping[str, Any] | None = None,
-             env: Mapping[str, str] | None = None, clock: Clock | None = None, mode: str = "cli",
-             transports: dict[str, httpx.AsyncBaseTransport] | None = None, auto_recover: bool = True) -> CoreRuntime:
+    def open(
+        cls,
+        *,
+        project_root: Path | None = None,
+        paths: CorePaths | None = None,
+        overrides: Mapping[str, Any] | None = None,
+        env: Mapping[str, str] | None = None,
+        clock: Clock | None = None,
+        mode: str = "cli",
+        transports: dict[str, httpx.AsyncBaseTransport] | None = None,
+        auto_recover: bool = True,
+    ) -> CoreRuntime:
         paths = paths or resolve_core_paths(env)
         paths.ensure()
         db = Database(paths.db_path)
         try:
             migrate(db, backup_dir=paths.backups_dir)
-            rt = cls(paths=paths, db=db, project_root=project_root, overrides=overrides, env=env, clock=clock or SYSTEM_CLOCK, mode=mode,
-                     transports=transports)
+            rt = cls(
+                paths=paths,
+                db=db,
+                project_root=project_root,
+                overrides=overrides,
+                env=env,
+                clock=clock or SYSTEM_CLOCK,
+                mode=mode,
+                transports=transports,
+            )
         except BaseException:
             db.close()
             raise
         now = rt.clock.now()
-        db.execute("INSERT INTO runtimes(id, pid, host, version, mode, started_at, heartbeat_at, status) VALUES (?,?,?,?,?,?,?,?)",
-                   (rt.runtime_id, os.getpid(), socket.gethostname(), __version__, mode, now, now, "running"))
+        db.execute(
+            "INSERT INTO runtimes(id, pid, host, version, mode, started_at, heartbeat_at, status) VALUES (?,?,?,?,?,?,?,?)",
+            (rt.runtime_id, os.getpid(), socket.gethostname(), __version__, mode, now, now, "running"),
+        )
         if auto_recover:
             try:
                 rt.last_recovery = recover(rt)
@@ -167,7 +238,9 @@ class CoreRuntime:
         while True:
             await asyncio.sleep(RUNTIME_HEARTBEAT_S)
             with contextlib.suppress(Exception):
-                self.db.execute("UPDATE runtimes SET heartbeat_at = ? WHERE id = ?", (self.clock.now(), self.runtime_id))
+                self.db.execute(
+                    "UPDATE runtimes SET heartbeat_at = ? WHERE id = ?", (self.clock.now(), self.runtime_id)
+                )
 
     async def close(self) -> None:
         for token in list(self._cancels.values()):
@@ -187,12 +260,18 @@ class CoreRuntime:
                     await closer()
         await self.registry.aclose()
         with contextlib.suppress(Exception):
-            self.db.execute("UPDATE runtimes SET status = 'stopped', stopped_at = ? WHERE id = ?", (self.clock.now(), self.runtime_id))
+            self.db.execute(
+                "UPDATE runtimes SET status = 'stopped', stopped_at = ? WHERE id = ?",
+                (self.clock.now(), self.runtime_id),
+            )
         self.db.close()
 
     def require_project(self) -> Project:
         if self.project is None:
-            raise UsageError("this command must be run inside a project directory", hint="cd into a repository or pass --project PATH")
+            raise UsageError(
+                "this command must be run inside a project directory",
+                hint="cd into a repository or pass --project PATH",
+            )
         return self.project
 
     # --------------------------------------------------------------- extensions
@@ -237,18 +316,35 @@ class CoreRuntime:
 
     def tool_services(self, project: Project, profile: dict[str, Any]) -> ToolServices:
         return ToolServices(
-            config=self.config, db=self.db, policy=self.policy, approvals=self.approvals, tasks=self.tasks, processes=self.processes,
-            artifacts=self.artifacts, evidence=self.evidence, events=self.events, redactor=self.redactor, workspaces=self.workspaces,
-            approval_handler=self.approval_handler, input_handler=self.input_handler, intel=self.index,
-            memory=self.memory if self.config.memory.enabled else None, skills=self.skills if self.config.skills.enabled else None,
-            mcp=self._extensions.get("mcp"), browser=self._extensions.get("browser"), research=self._extensions.get("research"),
-            lsp=self._extensions.get("lsp"), profile=profile,
+            config=self.config,
+            db=self.db,
+            policy=self.policy,
+            approvals=self.approvals,
+            tasks=self.tasks,
+            processes=self.processes,
+            artifacts=self.artifacts,
+            evidence=self.evidence,
+            events=self.events,
+            redactor=self.redactor,
+            workspaces=self.workspaces,
+            approval_handler=self.approval_handler,
+            input_handler=self.input_handler,
+            intel=self.index,
+            memory=self.memory if self.config.memory.enabled else None,
+            skills=self.skills if self.config.skills.enabled else None,
+            mcp=self._extensions.get("mcp"),
+            browser=self._extensions.get("browser"),
+            research=self._extensions.get("research"),
+            lsp=self._extensions.get("lsp"),
+            profile=profile,
         )
 
     def _active_heuristics(self, kind: str) -> list[dict[str, Any]]:
         from coremain.util.jsonutil import loads
 
-        rows = self.db.query("SELECT name, version, content_json FROM heuristics WHERE kind = ? AND status = 'active'", (kind,))
+        rows = self.db.query(
+            "SELECT name, version, content_json FROM heuristics WHERE kind = ? AND status = 'active'", (kind,)
+        )
         return [{"name": f"{r['name']}@v{r['version']}", **loads(r["content_json"], {})} for r in rows]
 
     # ------------------------------------------------------------ project intel
@@ -272,7 +368,11 @@ class CoreRuntime:
         data = prof.to_dict()
         data["summary"] = prof.summary()
         self.projects.update_profile(project.id, data, current_hash)
-        self.events.emit("project.profiled", project_id=project.id, data={"ecosystems": prof.ecosystems, "commands": prof.commands})
+        self.events.emit(
+            "project.profiled",
+            project_id=project.id,
+            data={"ecosystems": prof.ecosystems, "commands": prof.commands},
+        )
         return data
 
     def workspace_env(self, ws: Workspace, profile: dict[str, Any]) -> dict[str, str]:
@@ -293,9 +393,19 @@ class CoreRuntime:
                 return latest
         return self.sessions.create(project.id)
 
-    async def submit(self, text: str, *, session_id: str | None = None, mode: str | None = None, model: str | None = None,
-                     workspace_mode: str | None = None, contract: dict[str, Any] | None = None, auto_apply: bool | None = None,
-                     pins: dict[str, str] | None = None, title: str | None = None) -> Task:
+    async def submit(
+        self,
+        text: str,
+        *,
+        session_id: str | None = None,
+        mode: str | None = None,
+        model: str | None = None,
+        workspace_mode: str | None = None,
+        contract: dict[str, Any] | None = None,
+        auto_apply: bool | None = None,
+        pins: dict[str, str] | None = None,
+        title: str | None = None,
+    ) -> Task:
         project = self.require_project()
         text = text.strip()
         if not text:
@@ -306,16 +416,28 @@ class CoreRuntime:
         self.sessions.add_message(session.id, "user", text)
         profile = await self.profile_for(project)
         index_state = self.index.status(project.id)
-        cls = classify(text, repo_files=int(index_state.get("files") or 0), mode_override=mode, models_available=len(self.registry.models()),
-                       has_tests=bool((profile.get("commands") or {}).get("test") or self.config.verification.commands.get("test")))
+        cls = classify(
+            text,
+            repo_files=int(index_state.get("files") or 0),
+            mode_override=mode,
+            models_available=len(self.registry.models()),
+            has_tests=bool(
+                (profile.get("commands") or {}).get("test") or self.config.verification.commands.get("test")
+            ),
+        )
         merged_contract = self._default_contract()
         for key, value in (contract or {}).items():
             if isinstance(value, list):
                 merged_contract[key] = [*merged_contract.get(key, []), *value]
             else:
                 merged_contract[key] = value
-        reqs = plan_requirements(changes_code=cls.changes_code, kind=cls.kind, profile=profile, contract=merged_contract,
-                                 config=self.config.verification)
+        reqs = plan_requirements(
+            changes_code=cls.changes_code,
+            kind=cls.kind,
+            profile=profile,
+            contract=merged_contract,
+            config=self.config.verification,
+        )
         merged_contract["requirements"] = requirements_to_dicts(reqs)
         options: dict[str, Any] = {}
         if model:
@@ -326,14 +448,33 @@ class CoreRuntime:
             options["workspace"] = workspace_mode
         if auto_apply is not None:
             options["auto_apply"] = auto_apply
-        task = self.tasks.create(project_id=project.id, session_id=session.id, title=title or one_line(text, 90), description=text,
-                                 kind=cls.kind, contract=merged_contract, options=options, mode=cls.mode)
+        task = self.tasks.create(
+            project_id=project.id,
+            session_id=session.id,
+            title=title or one_line(text, 90),
+            description=text,
+            kind=cls.kind,
+            contract=merged_contract,
+            options=options,
+            mode=cls.mode,
+        )
         decision = {"classification": cls.to_dict(), "workflow": cls.workflow, "reasons": cls.reasons}
         task = self.tasks.update_fields(task.id, decision=decision)
-        self.events.emit("mode.selected", project_id=project.id, session_id=session.id, task_id=task.id,
-                         data={"mode": cls.mode, "workflow": cls.workflow, "kind": cls.kind, "risk": cls.risk, "reasons": cls.reasons,
-                               "requirements": [r.description or r.kind for r in reqs if r.required],
-                               "review_strategies": cls.review_strategies})
+        self.events.emit(
+            "mode.selected",
+            project_id=project.id,
+            session_id=session.id,
+            task_id=task.id,
+            data={
+                "mode": cls.mode,
+                "workflow": cls.workflow,
+                "kind": cls.kind,
+                "risk": cls.risk,
+                "reasons": cls.reasons,
+                "requirements": [r.description or r.kind for r in reqs if r.required],
+                "review_strategies": cls.review_strategies,
+            },
+        )
         return task
 
     def _default_contract(self) -> dict[str, Any]:
@@ -345,8 +486,16 @@ class CoreRuntime:
         from coremain.config.loader import read_toml
 
         data = read_toml(path)
-        allowed = {"acceptance_criteria", "constraints", "forbidden_paths", "required_tests", "required_commands", "required_checks",
-                   "browser_checks", "focus_paths"}
+        allowed = {
+            "acceptance_criteria",
+            "constraints",
+            "forbidden_paths",
+            "required_tests",
+            "required_commands",
+            "required_checks",
+            "browser_checks",
+            "focus_paths",
+        }
         return {k: v for k, v in data.items() if k in allowed}
 
     # --------------------------------------------------------------- execution
@@ -401,7 +550,9 @@ class CoreRuntime:
             task = self.tasks.resume(task_id, note="user answered the question")
         return task
 
-    def decide_approval(self, approval_id: str, approved: bool, *, scope: str = "once", reason: str | None = None) -> Any:
+    def decide_approval(
+        self, approval_id: str, approved: bool, *, scope: str = "once", reason: str | None = None
+    ) -> Any:
         approval = self.approvals.decide(approval_id, approved, scope=scope, reason=reason)  # type: ignore[arg-type]
         if approval.task_id:
             task = self.tasks.get(approval.task_id)
@@ -416,7 +567,9 @@ class CoreRuntime:
     def recent_conversation(self, task: Task, *, limit: int = 4) -> list[str]:
         if not task.session_id:
             return []
-        messages = [m for m in self.sessions.messages(task.session_id, limit=limit * 3) if m.task_id != task.id]
+        messages = [
+            m for m in self.sessions.messages(task.session_id, limit=limit * 3) if m.task_id != task.id
+        ]
         out = []
         for m in messages[-limit:]:
             if m.role == "user" and m.content.strip() == task.description.strip():
@@ -424,19 +577,40 @@ class CoreRuntime:
             out.append(f"{m.role}: {one_line(m.content, 700)}")
         return out
 
-    def record_context_snapshot(self, task_id: str, attempt_id: str, stage: str, compiled: CompiledContext) -> str:
+    def record_context_snapshot(
+        self, task_id: str, attempt_id: str, stage: str, compiled: CompiledContext
+    ) -> str:
         now = self.clock.now()
         snap_id = new_id("ctx", now=now)
         content_id = None
         if self.config.context.snapshot_content:
-            art = self.artifacts.put_text(compiled.render(), kind="context", name=stage, project_id=self.project.id if self.project else None,
-                                          task_id=task_id, attempt_id=attempt_id, media_type="text/markdown")
+            art = self.artifacts.put_text(
+                compiled.render(),
+                kind="context",
+                name=stage,
+                project_id=self.project.id if self.project else None,
+                task_id=task_id,
+                attempt_id=attempt_id,
+                media_type="text/markdown",
+            )
             content_id = art.id
         self.db.execute(
             "INSERT INTO context_snapshots(id, task_id, attempt_id, stage, strategy, strategy_version, cache_key, budget_tokens, used_tokens, "
             "manifest_json, content_artifact_id, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-            (snap_id, task_id, attempt_id, stage, compiled.strategy, compiled.strategy_version, compiled.cache_key, compiled.budget,
-             compiled.used, dumps(compiled.manifest()), content_id, now),
+            (
+                snap_id,
+                task_id,
+                attempt_id,
+                stage,
+                compiled.strategy,
+                compiled.strategy_version,
+                compiled.cache_key,
+                compiled.budget,
+                compiled.used,
+                dumps(compiled.manifest()),
+                content_id,
+                now,
+            ),
         )
         return snap_id
 
@@ -445,37 +619,80 @@ class CoreRuntime:
             return
         for ev in self.evidence.for_task(run.task.id, attempt_id=run.attempt.id, kinds=(EvidenceKind.TESTS,)):
             if ev.status == "pass" and ev.command and ev.data.get("name") == "suite":
-                self.memory.add(content=f"The project's test suite runs and passes with `{ev.command}`.", kind="fact", scope="operational",
-                                source_type="evidence", project_id=self.project.id, evidence_ids=[ev.id], tags=["tests", "commands"],
-                                source_ref=f"task:{run.task.id}")
+                self.memory.add(
+                    content=f"The project's test suite runs and passes with `{ev.command}`.",
+                    kind="fact",
+                    scope="operational",
+                    source_type="evidence",
+                    project_id=self.project.id,
+                    evidence_ids=[ev.id],
+                    tags=["tests", "commands"],
+                    source_ref=f"task:{run.task.id}",
+                )
                 break
 
     # ------------------------------------------------------------------ status
     def status(self) -> dict[str, Any]:
-        out: dict[str, Any] = {"version": __version__, "runtime_id": self.runtime_id, "data_dir": str(self.paths.data_dir),
-                               "config_warnings": self.effective.warnings}
-        out["providers"] = [{"id": pid, "kind": cfg.kind, "enabled": cfg.enabled,
-                             "credential": self.registry.credential_status(pid).describe()} for pid, cfg in self.config.providers.items()]
+        out: dict[str, Any] = {
+            "version": __version__,
+            "runtime_id": self.runtime_id,
+            "data_dir": str(self.paths.data_dir),
+            "config_warnings": self.effective.warnings,
+        }
+        out["providers"] = [
+            {
+                "id": pid,
+                "kind": cfg.kind,
+                "enabled": cfg.enabled,
+                "credential": self.registry.credential_status(pid).describe(),
+            }
+            for pid, cfg in self.config.providers.items()
+        ]
         out["models"] = [{"key": m.key, "ref": m.ref, "tier": m.config.tier} for m in self.registry.models()]
         out["permissions"] = self.policy.describe()
         if self.project is not None:
             project = self.projects.get(self.project.id)
-            counts = {r["status"]: r["n"] for r in self.db.query(
-                "SELECT status, COUNT(*) AS n FROM tasks WHERE project_id = ? GROUP BY status", (project.id,))}
+            counts = {
+                r["status"]: r["n"]
+                for r in self.db.query(
+                    "SELECT status, COUNT(*) AS n FROM tasks WHERE project_id = ? GROUP BY status",
+                    (project.id,),
+                )
+            }
             attention = self.tasks.list(project_id=project.id, statuses=ATTENTION, limit=20)
-            active = self.tasks.list(project_id=project.id, statuses={TaskStatus.RUNNING, TaskStatus.VERIFYING, TaskStatus.REVIEWING,
-                                                                      TaskStatus.QUEUED}, limit=20)
+            active = self.tasks.list(
+                project_id=project.id,
+                statuses={TaskStatus.RUNNING, TaskStatus.VERIFYING, TaskStatus.REVIEWING, TaskStatus.QUEUED},
+                limit=20,
+            )
             session = self.sessions.latest(project.id)
-            out["project"] = {"id": project.id, "root": project.root_path, "name": project.name, "vcs": project.vcs,
-                              "trusted": self.project_trusted, "profile": (project.profile or {}).get("summary")}
+            out["project"] = {
+                "id": project.id,
+                "root": project.root_path,
+                "name": project.name,
+                "vcs": project.vcs,
+                "trusted": self.project_trusted,
+                "profile": (project.profile or {}).get("summary"),
+            }
             out["session"] = {"id": session.id, "title": session.title} if session else None
-            out["tasks"] = {"counts": counts, "active": [self._task_brief(t) for t in active],
-                            "attention": [self._task_brief(t) for t in attention]}
+            out["tasks"] = {
+                "counts": counts,
+                "active": [self._task_brief(t) for t in active],
+                "attention": [self._task_brief(t) for t in attention],
+            }
             out["index"] = self.index.status(project.id)
             out["approvals"] = [a.to_dict() for a in self.approvals.pending(project_id=project.id)]
         return out
 
     @staticmethod
     def _task_brief(t: Task) -> dict[str, Any]:
-        return {"id": t.id, "title": t.title, "status": t.status.value, "mode": t.mode, "kind": t.kind, "reason": t.status_reason,
-                "block_reason": t.block_reason, "updated_at": t.updated_at}
+        return {
+            "id": t.id,
+            "title": t.title,
+            "status": t.status.value,
+            "mode": t.mode,
+            "kind": t.kind,
+            "reason": t.status_reason,
+            "block_reason": t.block_reason,
+            "updated_at": t.updated_at,
+        }

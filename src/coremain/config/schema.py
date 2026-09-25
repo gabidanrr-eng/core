@@ -12,7 +12,16 @@ from coremain.providers.errors import ProviderErrorClass
 Decision = Literal["allow", "ask", "deny"]
 ROLE_NAMES = ("planner", "implementer", "researcher", "reviewer", "debugger", "verifier", "summarizer")
 STRENGTH_DIMENSIONS = (
-    "coding", "planning", "review", "research", "debugging", "ui", "security", "writing", "long_context", "tool_use",
+    "coding",
+    "planning",
+    "review",
+    "research",
+    "debugging",
+    "ui",
+    "security",
+    "writing",
+    "long_context",
+    "tool_use",
 )
 CRED_REF_RE = re.compile(r"^(env|file|command|store):.+$")
 
@@ -103,7 +112,9 @@ class ModelConfig(_Base):
     def _v_strengths(cls, v: dict[str, float]) -> dict[str, float]:
         for key, score in v.items():
             if key not in STRENGTH_DIMENSIONS:
-                raise ValueError(f"unknown strength '{key}'; expected one of {', '.join(STRENGTH_DIMENSIONS)}")
+                raise ValueError(
+                    f"unknown strength '{key}'; expected one of {', '.join(STRENGTH_DIMENSIONS)}"
+                )
             if not 0.0 <= score <= 1.0:
                 raise ValueError(f"strength '{key}' must be between 0 and 1")
         return v
@@ -166,9 +177,22 @@ class PermissionRule(_Base):
 class NetworkConfig(_Base):
     offline: bool = False
     allow_domains: list[str] = [
-        "context7.com", "*.context7.com", "docs.python.org", "pypi.org", "developer.mozilla.org", "nodejs.org",
-        "registry.npmjs.org", "www.npmjs.com", "github.com", "raw.githubusercontent.com", "api.github.com",
-        "docs.rs", "pkg.go.dev", "*.readthedocs.io", "localhost", "127.0.0.1",
+        "context7.com",
+        "*.context7.com",
+        "docs.python.org",
+        "pypi.org",
+        "developer.mozilla.org",
+        "nodejs.org",
+        "registry.npmjs.org",
+        "www.npmjs.com",
+        "github.com",
+        "raw.githubusercontent.com",
+        "api.github.com",
+        "docs.rs",
+        "pkg.go.dev",
+        "*.readthedocs.io",
+        "localhost",
+        "127.0.0.1",
     ]
     deny_domains: list[str] = []
 
@@ -345,5 +369,7 @@ class CoreConfig(_Base):
         refs.extend(("routing.allowed", m) for m in (self.routing.allowed or []))
         for where, ref in refs:
             if ref not in known:
-                raise ValueError(f"{where} references unknown model '{ref}' (configured: {sorted(known) or 'none'})")
+                raise ValueError(
+                    f"{where} references unknown model '{ref}' (configured: {sorted(known) or 'none'})"
+                )
         return self

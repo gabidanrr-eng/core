@@ -51,15 +51,31 @@ class BudgetTracker:
     def check(self) -> None:
         c = self.config
         if self.turns >= c.max_turns_per_task:
-            raise BudgetExceededError(f"turn budget exhausted ({self.turns}/{c.max_turns_per_task})", details={"budget": "turns"})
+            raise BudgetExceededError(
+                f"turn budget exhausted ({self.turns}/{c.max_turns_per_task})", details={"budget": "turns"}
+            )
         if self.tokens >= c.max_tokens_per_task:
-            raise BudgetExceededError(f"token budget exhausted ({self.tokens}/{c.max_tokens_per_task})", details={"budget": "tokens"})
+            raise BudgetExceededError(
+                f"token budget exhausted ({self.tokens}/{c.max_tokens_per_task})",
+                details={"budget": "tokens"},
+            )
         if c.max_cost_usd_per_task is not None and self.cost_usd >= c.max_cost_usd_per_task:
-            raise BudgetExceededError(f"cost budget exhausted (${self.cost_usd:.4f}/${c.max_cost_usd_per_task})",
-                                      details={"budget": "cost"})
+            raise BudgetExceededError(
+                f"cost budget exhausted (${self.cost_usd:.4f}/${c.max_cost_usd_per_task})",
+                details={"budget": "cost"},
+            )
         if self.wall_s >= c.max_wall_time_s:
-            raise BudgetExceededError(f"wall-time budget exhausted ({self.wall_s:.0f}s/{c.max_wall_time_s}s)", details={"budget": "time"})
+            raise BudgetExceededError(
+                f"wall-time budget exhausted ({self.wall_s:.0f}s/{c.max_wall_time_s}s)",
+                details={"budget": "time"},
+            )
 
     def snapshot(self) -> dict[str, Any]:
-        return {"turns": self.turns, "tokens": self.tokens, "cost_usd": round(self.cost_usd, 6), "model_calls": self.model_calls,
-                "wall_s": round(self.clock.now() - self.started_at, 2), "per_model": self.per_model}
+        return {
+            "turns": self.turns,
+            "tokens": self.tokens,
+            "cost_usd": round(self.cost_usd, 6),
+            "model_calls": self.model_calls,
+            "wall_s": round(self.clock.now() - self.started_at, 2),
+            "per_model": self.per_model,
+        }

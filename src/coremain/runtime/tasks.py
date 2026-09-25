@@ -104,7 +104,10 @@ class TaskService:
         return [Task.from_row(r) for r in self.db.query(sql, params)]
 
     def attempts(self, task_id: str) -> list[Attempt]:
-        return [Attempt.from_row(r) for r in self.db.query("SELECT * FROM attempts WHERE task_id = ? ORDER BY number", (task_id,))]
+        return [
+            Attempt.from_row(r)
+            for r in self.db.query("SELECT * FROM attempts WHERE task_id = ? ORDER BY number", (task_id,))
+        ]
 
     def attempt(self, attempt_id: str) -> Attempt:
         row = self.db.one("SELECT * FROM attempts WHERE id = ?", (attempt_id,))
@@ -113,7 +116,9 @@ class TaskService:
         return Attempt.from_row(row)
 
     def dependencies(self, task_id: str) -> list[Task]:
-        rows = self.db.query("SELECT t.* FROM task_deps d JOIN tasks t ON t.id = d.depends_on WHERE d.task_id = ?", (task_id,))
+        rows = self.db.query(
+            "SELECT t.* FROM task_deps d JOIN tasks t ON t.id = d.depends_on WHERE d.task_id = ?", (task_id,)
+        )
         return [Task.from_row(r) for r in rows]
 
     def dependencies_met(self, task_id: str) -> bool:
@@ -154,7 +159,9 @@ class TaskService:
         now = self.clock.now()
         with self.db.tx() as conn:
             if idempotency_key:
-                existing = conn.execute("SELECT * FROM tasks WHERE idempotency_key = ?", (idempotency_key,)).fetchone()
+                existing = conn.execute(
+                    "SELECT * FROM tasks WHERE idempotency_key = ?", (idempotency_key,)
+                ).fetchone()
                 if existing is not None:
                     return Task.from_row(existing)
             depth = 0
@@ -169,19 +176,54 @@ class TaskService:
                 "INSERT INTO tasks(id, project_id, session_id, parent_task_id, kind, title, description, status, mode, "
                 "contract_json, options_json, priority, depth, idempotency_key, created_at, updated_at) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (task_id, project_id, session_id, parent_task_id, kind, title, description, status.value, mode,
-                 dumps(contract or {}), dumps(options or {}), priority, depth, idempotency_key, now, now),
+                (
+                    task_id,
+                    project_id,
+                    session_id,
+                    parent_task_id,
+                    kind,
+                    title,
+                    description,
+                    status.value,
+                    mode,
+                    dumps(contract or {}),
+                    dumps(options or {}),
+                    priority,
+                    depth,
+                    idempotency_key,
+                    now,
+                    now,
+                ),
             )
             for dep in deps:
                 conn.execute("INSERT INTO task_deps(task_id, depends_on) VALUES (?, ?)", (task_id, dep))
             self.events.emit(
-                "task.created", project_id=project_id, session_id=session_id, task_id=task_id,
-                data={"title": title, "kind": kind, "status": status.value, "parent": parent_task_id, "depends_on": deps},
+                "task.created",
+                project_id=project_id,
+                session_id=session_id,
+                task_id=task_id,
+                data={
+                    "title": title,
+                    "kind": kind,
+                    "status": status.value,
+                    "parent": parent_task_id,
+                    "depends_on": deps,
+                },
             )
             return self._get(conn, task_id)
 
     def update_fields(self, task_id: str, *, fence: Fence | None = None, **fields: Any) -> Task:
-        allowed = {"mode", "decision", "contract", "options", "workspace_id", "result_summary", "evidence_level", "title", "kind"}
+        allowed = {
+            "mode",
+            "decision",
+            "contract",
+            "options",
+            "workspace_id",
+            "result_summary",
+            "evidence_level",
+            "title",
+            "kind",
+        }
         unknown = set(fields) - allowed
         if unknown:
             raise ValueError(f"cannot update task fields {sorted(unknown)}")
@@ -223,21 +265,27 @@ class TaskService:
             if src == to:
                 return task
             if expect is not None and src not in set(expect):
-                raise InvalidTransitionError(f"task {task_id} is {src.value}, expected one of {[s.value for s in expect]}")
+                raise InvalidTransitionError(
+                    f"task {task_id} is {src.value}, expected one of {[s.value for s in expect]}"
+                )
             if to not in TRANSITIONS[src]:
                 raise InvalidTransitionError(
                     f"illegal transition {src.value} → {to.value} for task {task_id}",
                     details={"from": src.value, "to": to.value},
                 )
             if task.cancel_requested_at is not None and to not in ALLOWED_AFTER_CANCEL:
-                raise OperationCancelled(f"task {task_id} has a pending cancellation; refusing {src.value} → {to.value}")
+                raise OperationCancelled(
+                    f"task {task_id} has a pending cancellation; refusing {src.value} → {to.value}"
+                )
             gate_result: GateResult | None = None
             if to == TaskStatus.COMPLETED:
                 if gate is None:
                     raise GateFailedError("completion requires an evidence gate evaluation")
                 gate_result = gate(conn, task)
                 if not gate_result.passed:
-                    raise GateFailedError(f"evidence gate failed: {gate_result.summary}", details=gate_result.to_dict())
+                    raise GateFailedError(
+                        f"evidence gate failed: {gate_result.summary}", details=gate_result.to_dict()
+                    )
                 evidence_level = evidence_level or gate_result.level
             now = self.clock.now()
             cur = conn.execute(
@@ -246,8 +294,19 @@ class TaskService:
                 "completed_at = CASE WHEN ? THEN ? ELSE completed_at END, "
                 "pause_requested_at = CASE WHEN ? = 'paused' THEN NULL ELSE pause_requested_at END, "
                 "version = version + 1, updated_at = ? WHERE id = ? AND version = ?",
-                (to.value, reason, block_reason if to == TaskStatus.BLOCKED else None, result_summary, evidence_level,
-                 1 if to in TERMINAL else 0, now, to.value, now, task_id, task.version),
+                (
+                    to.value,
+                    reason,
+                    block_reason if to == TaskStatus.BLOCKED else None,
+                    result_summary,
+                    evidence_level,
+                    1 if to in TERMINAL else 0,
+                    now,
+                    to.value,
+                    now,
+                    task_id,
+                    task.version,
+                ),
             )
             if cur.rowcount != 1:
                 raise ConflictError(f"task {task_id} was modified concurrently")
@@ -259,8 +318,14 @@ class TaskService:
             if data:
                 payload.update(data)
             self.events.emit(
-                "task.transition", project_id=task.project_id, session_id=task.session_id, task_id=task_id,
-                actor=actor, level="warning" if to in {TaskStatus.FAILED, TaskStatus.UNKNOWN, TaskStatus.BLOCKED} else "info",
+                "task.transition",
+                project_id=task.project_id,
+                session_id=task.session_id,
+                task_id=task_id,
+                actor=actor,
+                level="warning"
+                if to in {TaskStatus.FAILED, TaskStatus.UNKNOWN, TaskStatus.BLOCKED}
+                else "info",
                 data=payload,
             )
             return self._get(conn, task_id)
@@ -278,14 +343,27 @@ class TaskService:
                 "version = version + 1, updated_at = ? WHERE id = ?",
                 (now, reason, now, task_id),
             )
-            self.events.emit("task.cancel_requested", project_id=task.project_id, session_id=task.session_id,
-                             task_id=task_id, actor=actor, data={"reason": reason})
+            self.events.emit(
+                "task.cancel_requested",
+                project_id=task.project_id,
+                session_id=task.session_id,
+                task_id=task_id,
+                actor=actor,
+                data={"reason": reason},
+            )
             holder = self.leases.holder(task_resource(task_id))
-            live_worker = holder is not None and holder["owner"] is not None and (holder["expires_at"] or 0) > now
-            waiting_inline = task.status in {TaskStatus.AWAITING_APPROVAL, TaskStatus.NEEDS_INPUT} and live_worker
+            live_worker = (
+                holder is not None and holder["owner"] is not None and (holder["expires_at"] or 0) > now
+            )
+            waiting_inline = (
+                task.status in {TaskStatus.AWAITING_APPROVAL, TaskStatus.NEEDS_INPUT} and live_worker
+            )
             if task.status not in ACTIVE and not waiting_inline:
                 self.transition(task_id, TaskStatus.CANCELLED, reason=reason, actor=actor)
-                conn.execute("UPDATE approvals SET status = 'cancelled', decided_at = ? WHERE task_id = ? AND status = 'pending'", (now, task_id))
+                conn.execute(
+                    "UPDATE approvals SET status = 'cancelled', decided_at = ? WHERE task_id = ? AND status = 'pending'",
+                    (now, task_id),
+                )
             for child in conn.execute("SELECT id FROM tasks WHERE parent_task_id = ?", (task_id,)).fetchall():
                 self.request_cancel(child["id"], reason=f"parent cancelled: {reason}", actor=actor)
             return self._get(conn, task_id)
@@ -297,16 +375,29 @@ class TaskService:
                 return task
             if task.status == TaskStatus.QUEUED:
                 return self.transition(task_id, TaskStatus.PAUSED, reason="paused by user", actor=actor)
-            conn.execute("UPDATE tasks SET pause_requested_at = ?, updated_at = ? WHERE id = ?", (self.clock.now(), self.clock.now(), task_id))
-            self.events.emit("task.pause_requested", project_id=task.project_id, session_id=task.session_id, task_id=task_id, actor=actor)
+            conn.execute(
+                "UPDATE tasks SET pause_requested_at = ?, updated_at = ? WHERE id = ?",
+                (self.clock.now(), self.clock.now(), task_id),
+            )
+            self.events.emit(
+                "task.pause_requested",
+                project_id=task.project_id,
+                session_id=task.session_id,
+                task_id=task_id,
+                actor=actor,
+            )
             return self._get(conn, task_id)
 
     def resume(self, task_id: str, *, actor: str = "user", note: str | None = None) -> Task:
         task = self.get(task_id)
         if task.cancel_requested_at is not None:
-            raise InvalidTransitionError(f"task {task_id} was cancelled and cannot be resumed; create a new task instead")
+            raise InvalidTransitionError(
+                f"task {task_id} was cancelled and cannot be resumed; create a new task instead"
+            )
         if task.status not in RESUMABLE and task.status != TaskStatus.QUEUED:
-            raise InvalidTransitionError(f"task {task_id} is {task.status.value}; only {sorted(s.value for s in RESUMABLE)} can be resumed")
+            raise InvalidTransitionError(
+                f"task {task_id} is {task.status.value}; only {sorted(s.value for s in RESUMABLE)} can be resumed"
+            )
         with self.db.tx() as conn:
             conn.execute("UPDATE tasks SET pause_requested_at = NULL WHERE id = ?", (task_id,))
             return self.transition(task_id, TaskStatus.QUEUED, reason=note or "resumed", actor=actor)
@@ -327,24 +418,54 @@ class TaskService:
         now = self.clock.now()
         with self.db.tx() as conn:
             self.leases.verify(conn, fence)
-            task = self.transition(task_id, TaskStatus.RUNNING, reason="attempt started", fence=fence, expect={TaskStatus.QUEUED})
-            number = int(conn.execute("SELECT COALESCE(MAX(number), 0) + 1 FROM attempts WHERE task_id = ?", (task_id,)).fetchone()[0])
+            task = self.transition(
+                task_id, TaskStatus.RUNNING, reason="attempt started", fence=fence, expect={TaskStatus.QUEUED}
+            )
+            number = int(
+                conn.execute(
+                    "SELECT COALESCE(MAX(number), 0) + 1 FROM attempts WHERE task_id = ?", (task_id,)
+                ).fetchone()[0]
+            )
             attempt_id = new_id("att", now=now)
             conn.execute(
                 "INSERT INTO attempts(id, task_id, number, status, runtime_id, fence_token, workspace_id, workflow, "
                 "checkpoint_json, base_fingerprint, resumed_from, started_at, heartbeat_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (attempt_id, task_id, number, AttemptStatus.RUNNING.value, runtime_id, fence.token, workspace_id, workflow,
-                 dumps(checkpoint or {}), base_fingerprint, resumed_from, now, now),
+                (
+                    attempt_id,
+                    task_id,
+                    number,
+                    AttemptStatus.RUNNING.value,
+                    runtime_id,
+                    fence.token,
+                    workspace_id,
+                    workflow,
+                    dumps(checkpoint or {}),
+                    base_fingerprint,
+                    resumed_from,
+                    now,
+                    now,
+                ),
             )
             conn.execute(
                 "UPDATE tasks SET attempt_count = attempt_count + 1, recovered_count = recovered_count + ? WHERE id = ?",
                 (1 if resumed_from else 0, task_id),
             )
             self.events.emit(
-                "attempt.started", project_id=task.project_id, session_id=task.session_id, task_id=task_id,
-                attempt_id=attempt_id, data={"number": number, "fence": fence.token, "resumed_from": resumed_from, "workflow": workflow},
+                "attempt.started",
+                project_id=task.project_id,
+                session_id=task.session_id,
+                task_id=task_id,
+                attempt_id=attempt_id,
+                data={
+                    "number": number,
+                    "fence": fence.token,
+                    "resumed_from": resumed_from,
+                    "workflow": workflow,
+                },
             )
-            return self._get(conn, task_id), Attempt.from_row(conn.execute("SELECT * FROM attempts WHERE id = ?", (attempt_id,)).fetchone())
+            return self._get(conn, task_id), Attempt.from_row(
+                conn.execute("SELECT * FROM attempts WHERE id = ?", (attempt_id,)).fetchone()
+            )
 
     def end_attempt(
         self,
@@ -368,21 +489,36 @@ class TaskService:
             conn.execute(
                 "UPDATE attempts SET status = ?, error_class = ?, error_message = ?, usage_json = COALESCE(?, usage_json), "
                 "ended_at = ? WHERE id = ?",
-                (status.value, error_class, error_message, dumps(usage) if usage is not None else None, self.clock.now(), attempt_id),
+                (
+                    status.value,
+                    error_class,
+                    error_message,
+                    dumps(usage) if usage is not None else None,
+                    self.clock.now(),
+                    attempt_id,
+                ),
             )
             task = self._get(conn, attempt.task_id)
             self.events.emit(
-                "attempt.ended", project_id=task.project_id, session_id=task.session_id, task_id=task.id,
-                attempt_id=attempt_id, level="info" if status == AttemptStatus.SUCCEEDED else "warning",
+                "attempt.ended",
+                project_id=task.project_id,
+                session_id=task.session_id,
+                task_id=task.id,
+                attempt_id=attempt_id,
+                level="info" if status == AttemptStatus.SUCCEEDED else "warning",
                 data={"status": status.value, "error_class": error_class, "error": error_message},
             )
-            return Attempt.from_row(conn.execute("SELECT * FROM attempts WHERE id = ?", (attempt_id,)).fetchone())
+            return Attempt.from_row(
+                conn.execute("SELECT * FROM attempts WHERE id = ?", (attempt_id,)).fetchone()
+            )
 
     def save_checkpoint(self, attempt_id: str, fence: Fence, checkpoint: dict[str, Any]) -> None:
         with self.db.tx() as conn:
             self.leases.verify(conn, fence)
-            conn.execute("UPDATE attempts SET checkpoint_json = ?, heartbeat_at = ? WHERE id = ?",
-                         (dumps(checkpoint), self.clock.now(), attempt_id))
+            conn.execute(
+                "UPDATE attempts SET checkpoint_json = ?, heartbeat_at = ? WHERE id = ?",
+                (dumps(checkpoint), self.clock.now(), attempt_id),
+            )
 
     def record_usage(self, attempt_id: str, usage: dict[str, Any]) -> None:
         self.db.execute("UPDATE attempts SET usage_json = ? WHERE id = ?", (dumps(usage), attempt_id))

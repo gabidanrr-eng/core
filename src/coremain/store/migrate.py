@@ -70,7 +70,10 @@ def _ensure_table(db: Database) -> None:
 def status(db: Database) -> MigrationStatus:
     _ensure_table(db)
     known = {m.version: m for m in load_migrations()}
-    have = {int(r["version"]): str(r["checksum"]) for r in db.query("SELECT version, checksum FROM schema_migrations")}
+    have = {
+        int(r["version"]): str(r["checksum"])
+        for r in db.query("SELECT version, checksum FROM schema_migrations")
+    }
     latest = max(known) if known else 0
     return MigrationStatus(
         current=max(have) if have else 0,

@@ -17,23 +17,89 @@ from typing import Any
 from coremain.util.jsonutil import sha256_hex
 
 MANIFESTS = (
-    "pyproject.toml", "setup.py", "setup.cfg", "requirements.txt", "requirements-dev.txt", "Pipfile", "tox.ini", "pytest.ini",
-    "mypy.ini", "ruff.toml", ".flake8", "uv.lock", "poetry.lock", "package.json", "tsconfig.json", "pnpm-lock.yaml", "yarn.lock",
-    "package-lock.json", "bun.lockb", "bun.lock", "go.mod", "Cargo.toml", "pom.xml", "build.gradle", "build.gradle.kts", "Gemfile",
-    "composer.json", "Makefile", "Dockerfile", "docker-compose.yml", "compose.yaml", "alembic.ini", "manage.py", "conftest.py",
-    "pyrightconfig.json", "deno.json", "vite.config.ts", "vite.config.js", "next.config.js", "playwright.config.ts",
+    "pyproject.toml",
+    "setup.py",
+    "setup.cfg",
+    "requirements.txt",
+    "requirements-dev.txt",
+    "Pipfile",
+    "tox.ini",
+    "pytest.ini",
+    "mypy.ini",
+    "ruff.toml",
+    ".flake8",
+    "uv.lock",
+    "poetry.lock",
+    "package.json",
+    "tsconfig.json",
+    "pnpm-lock.yaml",
+    "yarn.lock",
+    "package-lock.json",
+    "bun.lockb",
+    "bun.lock",
+    "go.mod",
+    "Cargo.toml",
+    "pom.xml",
+    "build.gradle",
+    "build.gradle.kts",
+    "Gemfile",
+    "composer.json",
+    "Makefile",
+    "Dockerfile",
+    "docker-compose.yml",
+    "compose.yaml",
+    "alembic.ini",
+    "manage.py",
+    "conftest.py",
+    "pyrightconfig.json",
+    "deno.json",
+    "vite.config.ts",
+    "vite.config.js",
+    "next.config.js",
+    "playwright.config.ts",
 )
 FRAMEWORK_HINTS = {
-    "fastapi": "FastAPI", "flask": "Flask", "django": "Django", "aiogram": "aiogram (Telegram)", "telegram": "python-telegram-bot",
-    "discord": "discord.py", "sqlalchemy": "SQLAlchemy", "alembic": "Alembic", "celery": "Celery", "pydantic": "Pydantic",
-    "httpx": "httpx", "requests": "requests", "aiohttp": "aiohttp", "pytest-asyncio": "pytest-asyncio", "typer": "Typer",
-    "click": "Click", "textual": "Textual", "scrapy": "Scrapy", "playwright": "Playwright", "selenium": "Selenium",
+    "fastapi": "FastAPI",
+    "flask": "Flask",
+    "django": "Django",
+    "aiogram": "aiogram (Telegram)",
+    "telegram": "python-telegram-bot",
+    "discord": "discord.py",
+    "sqlalchemy": "SQLAlchemy",
+    "alembic": "Alembic",
+    "celery": "Celery",
+    "pydantic": "Pydantic",
+    "httpx": "httpx",
+    "requests": "requests",
+    "aiohttp": "aiohttp",
+    "pytest-asyncio": "pytest-asyncio",
+    "typer": "Typer",
+    "click": "Click",
+    "textual": "Textual",
+    "scrapy": "Scrapy",
+    "playwright": "Playwright",
+    "selenium": "Selenium",
 }
 NODE_HINTS = {
-    "react": "React", "next": "Next.js", "vue": "Vue", "svelte": "Svelte", "@sveltejs/kit": "SvelteKit", "express": "Express",
-    "fastify": "Fastify", "@nestjs/core": "NestJS", "jest": "Jest", "vitest": "Vitest", "@playwright/test": "Playwright",
-    "typescript": "TypeScript", "discord.js": "discord.js", "telegraf": "Telegraf", "grammy": "grammY", "prisma": "Prisma",
-    "vite": "Vite", "tailwindcss": "Tailwind", "electron": "Electron",
+    "react": "React",
+    "next": "Next.js",
+    "vue": "Vue",
+    "svelte": "Svelte",
+    "@sveltejs/kit": "SvelteKit",
+    "express": "Express",
+    "fastify": "Fastify",
+    "@nestjs/core": "NestJS",
+    "jest": "Jest",
+    "vitest": "Vitest",
+    "@playwright/test": "Playwright",
+    "typescript": "TypeScript",
+    "discord.js": "discord.js",
+    "telegraf": "Telegraf",
+    "grammy": "grammY",
+    "prisma": "Prisma",
+    "vite": "Vite",
+    "tailwindcss": "Tailwind",
+    "electron": "Electron",
 }
 
 
@@ -67,7 +133,9 @@ class ProjectProfile:
             parts.append("Frameworks/libraries: " + ", ".join(self.frameworks[:12]))
         for key in ("test", "lint", "typecheck", "build", "format"):
             if key in self.commands:
-                parts.append(f"{key} command: `{self.commands[key]}` ({self.command_sources.get(key, 'detected')})")
+                parts.append(
+                    f"{key} command: `{self.commands[key]}` ({self.command_sources.get(key, 'detected')})"
+                )
         if self.entry_points:
             parts.append("Entry points: " + ", ".join(self.entry_points[:8]))
         if self.test_dirs:
@@ -116,15 +184,36 @@ def _py_cmd(runner: str, tool: str) -> str:
     return f"{runner} {tool}"
 
 
-def detect_profile(root: Path, languages: dict[str, int] | None = None, files: list[str] | None = None) -> ProjectProfile:
+def detect_profile(
+    root: Path, languages: dict[str, int] | None = None, files: list[str] | None = None
+) -> ProjectProfile:
     prof = ProjectProfile(languages=dict(languages or {}))
-    code_langs = {k: v for k, v in prof.languages.items() if k not in {"markdown", "json", "yaml", "toml", "text", "ini", "html", "css", "rst"}}
+    code_langs = {
+        k: v
+        for k, v in prof.languages.items()
+        if k not in {"markdown", "json", "yaml", "toml", "text", "ini", "html", "css", "rst"}
+    }
     if code_langs:
         prof.primary_language = max(code_langs, key=lambda k: code_langs[k])
     files = files or []
     prof.manifests_hash = manifests_hash(root)
-    for name in ("README.md", "README.rst", "README", "AGENTS.md", "CORE.md", "CLAUDE.md", "CONTRIBUTING.md", "Makefile", "Dockerfile",
-                 "docker-compose.yml", "pyproject.toml", "package.json", "go.mod", "Cargo.toml", ".env.example"):
+    for name in (
+        "README.md",
+        "README.rst",
+        "README",
+        "AGENTS.md",
+        "CORE.md",
+        "CLAUDE.md",
+        "CONTRIBUTING.md",
+        "Makefile",
+        "Dockerfile",
+        "docker-compose.yml",
+        "pyproject.toml",
+        "package.json",
+        "go.mod",
+        "Cargo.toml",
+        ".env.example",
+    ):
         if (root / name).exists():
             prof.important_files.append(name)
     workflows = root / ".github" / "workflows"
@@ -146,26 +235,49 @@ def detect_profile(root: Path, languages: dict[str, int] | None = None, files: l
             pyproject = tomllib.loads(pyproject_text)
         except tomllib.TOMLDecodeError:
             prof.notes.append("pyproject.toml could not be parsed")
-    has_python = bool(pyproject_text) or any((root / n).exists() for n in ("setup.py", "setup.cfg", "requirements.txt", "Pipfile")) or \
-        prof.languages.get("python", 0) > 0
+    has_python = (
+        bool(pyproject_text)
+        or any((root / n).exists() for n in ("setup.py", "setup.cfg", "requirements.txt", "Pipfile"))
+        or prof.languages.get("python", 0) > 0
+    )
     if has_python:
         prof.ecosystems.append("python")
         runner, kind = _python_runner(root)
         prof.package_managers.append(kind if kind != "system" else "pip")
-        deps_blob = (pyproject_text + _read(root, "requirements.txt") + _read(root, "requirements-dev.txt") + _read(root, "setup.py")
-                     + _read(root, "setup.cfg") + _read(root, "Pipfile")).lower()
+        deps_blob = (
+            pyproject_text
+            + _read(root, "requirements.txt")
+            + _read(root, "requirements-dev.txt")
+            + _read(root, "setup.py")
+            + _read(root, "setup.cfg")
+            + _read(root, "Pipfile")
+        ).lower()
         for key, label in FRAMEWORK_HINTS.items():
             if re.search(rf"(?<![\w-]){re.escape(key)}(?![\w-])", deps_blob):
                 prof.frameworks.append(label)
         tool = pyproject.get("tool", {}) if isinstance(pyproject.get("tool"), dict) else {}
-        uses_pytest = ("pytest" in tool or (root / "pytest.ini").exists() or (root / "conftest.py").exists()
-                       or "[pytest]" in _read(root, "tox.ini") or "[tool:pytest]" in _read(root, "setup.cfg") or "pytest" in deps_blob
-                       or any(re.search(r"(^|/)test_[^/]+\.py$", f) for f in files))
+        uses_pytest = (
+            "pytest" in tool
+            or (root / "pytest.ini").exists()
+            or (root / "conftest.py").exists()
+            or "[pytest]" in _read(root, "tox.ini")
+            or "[tool:pytest]" in _read(root, "setup.cfg")
+            or "pytest" in deps_blob
+            or any(re.search(r"(^|/)test_[^/]+\.py$", f) for f in files)
+        )
         if uses_pytest:
             set_cmd("test", _py_cmd(runner, "pytest -q"), "pytest detected")
         elif any(re.search(r"(^|/)tests?/.*\.py$", f) for f in files):
-            set_cmd("test", _py_cmd(runner, "unittest discover -s tests" if runner.endswith("-m") else "python -m unittest discover -s tests"),
-                    "unittest layout")
+            set_cmd(
+                "test",
+                _py_cmd(
+                    runner,
+                    "unittest discover -s tests"
+                    if runner.endswith("-m")
+                    else "python -m unittest discover -s tests",
+                ),
+                "unittest layout",
+            )
         if "ruff" in tool or (root / "ruff.toml").exists() or "ruff" in deps_blob:
             set_cmd("lint", _py_cmd(runner, "ruff check ."), "ruff configured")
             set_cmd("format", _py_cmd(runner, "ruff format --check ."), "ruff configured")
@@ -177,12 +289,27 @@ def detect_profile(root: Path, languages: dict[str, int] | None = None, files: l
             set_cmd("typecheck", _py_cmd(runner, "pyright"), "pyright configured")
         if "black" in tool and "format" not in prof.commands:
             set_cmd("format", _py_cmd(runner, "black --check ."), "black configured")
-        packages = sorted({f.split("/")[0] for f in files if f.count("/") == 1 and f.endswith("/__init__.py")}
-                          | {f.split("/")[1] for f in files if f.startswith("src/") and f.count("/") == 2 and f.endswith("/__init__.py")})
+        packages = sorted(
+            {f.split("/")[0] for f in files if f.count("/") == 1 and f.endswith("/__init__.py")}
+            | {
+                f.split("/")[1]
+                for f in files
+                if f.startswith("src/") and f.count("/") == 2 and f.endswith("/__init__.py")
+            }
+        )
         src_dirs = ["src"] if any(f.startswith("src/") and f.endswith(".py") for f in files) else []
-        prof.python = {"runner": runner, "runner_kind": kind, "packages": packages, "src_dirs": src_dirs,
-                       "venv": next((v for v in (".venv", "venv") if (root / v / "bin" / "python").exists()), None)}
-        scripts = (pyproject.get("project", {}) or {}).get("scripts", {}) if isinstance(pyproject.get("project"), dict) else {}
+        prof.python = {
+            "runner": runner,
+            "runner_kind": kind,
+            "packages": packages,
+            "src_dirs": src_dirs,
+            "venv": next((v for v in (".venv", "venv") if (root / v / "bin" / "python").exists()), None),
+        }
+        scripts = (
+            (pyproject.get("project", {}) or {}).get("scripts", {})
+            if isinstance(pyproject.get("project"), dict)
+            else {}
+        )
         for name, target in list(scripts.items())[:5]:
             prof.entry_points.append(f"console script `{name}` → {target}")
         for cand in ("manage.py", "main.py", "app.py", "bot.py", "server.py", "run.py"):
@@ -217,12 +344,23 @@ def detect_profile(root: Path, languages: dict[str, int] | None = None, files: l
             if key in deps:
                 prof.frameworks.append(label)
         run = "npm run" if pm == "npm" else f"{pm} run"
-        for key, script_names in (("test", ("test",)), ("lint", ("lint",)), ("typecheck", ("typecheck", "type-check", "tsc")),
-                                  ("build", ("build",)), ("format", ("format:check", "fmt:check", "prettier:check"))):
+        for key, script_names in (
+            ("test", ("test",)),
+            ("lint", ("lint",)),
+            ("typecheck", ("typecheck", "type-check", "tsc")),
+            ("build", ("build",)),
+            ("format", ("format:check", "fmt:check", "prettier:check")),
+        ):
             for s in script_names:
                 value = scripts.get(s)
                 if value and not (key == "test" and "no test specified" in value):
-                    set_cmd(key, f"{pm} test" if key == "test" and pm in {"npm", "pnpm", "yarn", "bun"} else f"{run} {s}", f"package.json scripts.{s}")
+                    set_cmd(
+                        key,
+                        f"{pm} test"
+                        if key == "test" and pm in {"npm", "pnpm", "yarn", "bun"}
+                        else f"{run} {s}",
+                        f"package.json scripts.{s}",
+                    )
                     break
         if "typecheck" not in prof.commands and (root / "tsconfig.json").exists():
             set_cmd("typecheck", "npx tsc --noEmit", "tsconfig.json present")
@@ -257,22 +395,35 @@ def detect_profile(root: Path, languages: dict[str, int] | None = None, files: l
         set_cmd("build", f"{gradle} build -x test", "gradle build")
     if (root / "Gemfile").exists():
         prof.ecosystems.append("ruby")
-        set_cmd("test", "bundle exec rspec" if (root / "spec").is_dir() else "bundle exec rake test", "Gemfile")
+        set_cmd(
+            "test", "bundle exec rspec" if (root / "spec").is_dir() else "bundle exec rake test", "Gemfile"
+        )
     if (root / "composer.json").exists():
         prof.ecosystems.append("php")
         set_cmd("test", "vendor/bin/phpunit", "composer.json")
     makefile = _read(root, "Makefile")
     if makefile:
         targets = set(re.findall(r"^([A-Za-z][\w-]*):", makefile, re.M))
-        for key, names in (("test", ("test", "check")), ("lint", ("lint",)), ("build", ("build",)), ("typecheck", ("typecheck", "mypy"))):
+        for key, names in (
+            ("test", ("test", "check")),
+            ("lint", ("lint",)),
+            ("build", ("build",)),
+            ("typecheck", ("typecheck", "mypy")),
+        ):
             for n in names:
                 if n in targets:
                     set_cmd(key, f"make {n}", "Makefile target")
                     break
-    if (root / "Dockerfile").exists() or (root / "docker-compose.yml").exists() or (root / "compose.yaml").exists():
+    if (
+        (root / "Dockerfile").exists()
+        or (root / "docker-compose.yml").exists()
+        or (root / "compose.yaml").exists()
+    ):
         prof.notes.append("containerized (Dockerfile/compose present)")
     if (root / ".env.example").exists():
-        prof.notes.append("configuration via environment variables (.env.example present; real .env is never read)")
+        prof.notes.append(
+            "configuration via environment variables (.env.example present; real .env is never read)"
+        )
     if not prof.commands.get("test"):
         prof.notes.append("no automated test command detected")
     prof.frameworks = list(dict.fromkeys(prof.frameworks))

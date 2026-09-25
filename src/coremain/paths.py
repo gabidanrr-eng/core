@@ -67,8 +67,18 @@ class CorePaths:
         return self.cache_dir / "tmp"
 
     def ensure(self) -> None:
-        for d in (self.config_dir, self.data_dir, self.cache_dir, self.state_dir, self.artifacts_dir,
-                  self.workspaces_dir, self.snapshots_dir, self.logs_dir, self.tmp_dir, self.backups_dir):
+        for d in (
+            self.config_dir,
+            self.data_dir,
+            self.cache_dir,
+            self.state_dir,
+            self.artifacts_dir,
+            self.workspaces_dir,
+            self.snapshots_dir,
+            self.logs_dir,
+            self.tmp_dir,
+            self.backups_dir,
+        ):
             d.mkdir(parents=True, exist_ok=True)
         for d in (self.config_dir, self.data_dir):
             try:

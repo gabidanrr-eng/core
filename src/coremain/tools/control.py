@@ -58,8 +58,10 @@ class SubmitPlan(Tool):
 
 class SubmitResult(Tool):
     name = "submit_result"
-    description = ("Submit the implementation result (ends implementation). Report exactly what changed and what you ran; "
-                   "claims are checked against the actual diff and command records.")
+    description = (
+        "Submit the implementation result (ends implementation). Report exactly what changed and what you ran; "
+        "claims are checked against the actual diff and command records."
+    )
     capability = Capability.CONTROL
     terminal = True
 
@@ -86,7 +88,9 @@ class Citation(ToolInput):
 
 class SubmitAnswer(Tool):
     name = "submit_answer"
-    description = "Submit the final answer for a question/research task, with citations to files you actually read."
+    description = (
+        "Submit the final answer for a question/research task, with citations to files you actually read."
+    )
     capability = Capability.CONTROL
     terminal = True
 
@@ -104,8 +108,19 @@ class SubmitAnswer(Tool):
 
 class FindingInput(ToolInput):
     severity: Literal["critical", "high", "medium", "low", "info"]
-    category: Literal["correctness", "security", "concurrency", "edge_case", "architecture", "tests", "performance",
-                      "dependency", "misleading_claim", "maintainability", "requirements"]
+    category: Literal[
+        "correctness",
+        "security",
+        "concurrency",
+        "edge_case",
+        "architecture",
+        "tests",
+        "performance",
+        "dependency",
+        "misleading_claim",
+        "maintainability",
+        "requirements",
+    ]
     title: str
     file: str | None = None
     line: int | None = None
@@ -116,8 +131,10 @@ class FindingInput(ToolInput):
 
 class SubmitReview(Tool):
     name = "submit_review"
-    description = ("Submit the review (ends review). Verdict 'approve' only if no blocking problems remain. Every finding needs "
-                   "severity, location, rationale, evidence and a concrete remediation.")
+    description = (
+        "Submit the review (ends review). Verdict 'approve' only if no blocking problems remain. Every finding needs "
+        "severity, location, rationale, evidence and a concrete remediation."
+    )
     capability = Capability.CONTROL
     terminal = True
 
@@ -135,7 +152,9 @@ class SubmitReview(Tool):
 
 class RecordHypothesis(Tool):
     name = "record_hypothesis"
-    description = "Record a debugging hypothesis before testing it. Returns an id to use with record_experiment."
+    description = (
+        "Record a debugging hypothesis before testing it. Returns an id to use with record_experiment."
+    )
     capability = Capability.CONTROL
 
     class Input(ToolInput):
@@ -147,16 +166,25 @@ class RecordHypothesis(Tool):
         db = ctx.services.db
         now = ctx.services.events.clock.now()
         hyp_id = new_id("hyp", now=now)
-        db.execute("INSERT INTO debug_hypotheses(id, task_id, attempt_id, statement, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
-                   (hyp_id, ctx.task_id, ctx.attempt_id, args.statement, "open", now, now))
-        ctx.services.events.emit("debug.hypothesis", project_id=ctx.project_id, task_id=ctx.task_id, attempt_id=ctx.attempt_id,
-                                 data={"hypothesis_id": hyp_id, "statement": args.statement})
+        db.execute(
+            "INSERT INTO debug_hypotheses(id, task_id, attempt_id, statement, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
+            (hyp_id, ctx.task_id, ctx.attempt_id, args.statement, "open", now, now),
+        )
+        ctx.services.events.emit(
+            "debug.hypothesis",
+            project_id=ctx.project_id,
+            task_id=ctx.task_id,
+            attempt_id=ctx.attempt_id,
+            data={"hypothesis_id": hyp_id, "statement": args.statement},
+        )
         return ToolResult(True, f"hypothesis {hyp_id} recorded", data={"id": hyp_id})
 
 
 class RecordExperiment(Tool):
     name = "record_experiment"
-    description = "Record the result of an experiment that tests a hypothesis (confirmed/refuted/inconclusive)."
+    description = (
+        "Record the result of an experiment that tests a hypothesis (confirmed/refuted/inconclusive)."
+    )
     capability = Capability.CONTROL
 
     class Input(ToolInput):
@@ -167,16 +195,29 @@ class RecordExperiment(Tool):
 
     async def run(self, ctx: ToolContext, args: Input) -> ToolResult:
         db = ctx.services.db
-        row = db.one("SELECT * FROM debug_hypotheses WHERE id = ? AND task_id = ?", (args.hypothesis_id, ctx.task_id))
+        row = db.one(
+            "SELECT * FROM debug_hypotheses WHERE id = ? AND task_id = ?", (args.hypothesis_id, ctx.task_id)
+        )
         if row is None:
             raise ToolError(f"unknown hypothesis {args.hypothesis_id}", error_class="not_found")
         experiments = loads(row["experiments_json"], [])
-        experiments.append({"action": args.action, "observation": args.observation[:2000], "verdict": args.verdict})
-        status = {"confirmed": "confirmed", "refuted": "refuted"}.get(args.verdict, row["status"] if row["status"] != "open" else "inconclusive")
-        db.execute("UPDATE debug_hypotheses SET experiments_json = ?, status = ?, updated_at = ? WHERE id = ?",
-                   (dumps(experiments), status, ctx.services.events.clock.now(), args.hypothesis_id))
-        ctx.services.events.emit("debug.experiment", project_id=ctx.project_id, task_id=ctx.task_id, attempt_id=ctx.attempt_id,
-                                 data={"hypothesis_id": args.hypothesis_id, "verdict": args.verdict, "action": args.action[:200]})
+        experiments.append(
+            {"action": args.action, "observation": args.observation[:2000], "verdict": args.verdict}
+        )
+        status = {"confirmed": "confirmed", "refuted": "refuted"}.get(
+            args.verdict, row["status"] if row["status"] != "open" else "inconclusive"
+        )
+        db.execute(
+            "UPDATE debug_hypotheses SET experiments_json = ?, status = ?, updated_at = ? WHERE id = ?",
+            (dumps(experiments), status, ctx.services.events.clock.now(), args.hypothesis_id),
+        )
+        ctx.services.events.emit(
+            "debug.experiment",
+            project_id=ctx.project_id,
+            task_id=ctx.task_id,
+            attempt_id=ctx.attempt_id,
+            data={"hypothesis_id": args.hypothesis_id, "verdict": args.verdict, "action": args.action[:200]},
+        )
         return ToolResult(True, f"experiment recorded; hypothesis now {status}")
 
 
@@ -199,16 +240,38 @@ class RecordDecision(Tool):
         db.execute(
             "INSERT INTO decisions(id, project_id, session_id, task_id, title, status, context, decision, alternatives_json, consequences, "
             "source, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (adr_id, ctx.project_id, ctx.session_id, ctx.task_id, args.title, "proposed", args.context, args.decision,
-             dumps(args.alternatives), args.consequences, f"model:{ctx.role}", now, now),
+            (
+                adr_id,
+                ctx.project_id,
+                ctx.session_id,
+                ctx.task_id,
+                args.title,
+                "proposed",
+                args.context,
+                args.decision,
+                dumps(args.alternatives),
+                args.consequences,
+                f"model:{ctx.role}",
+                now,
+                now,
+            ),
         )
-        ctx.services.events.emit("decision.proposed", project_id=ctx.project_id, task_id=ctx.task_id, data={"decision_id": adr_id, "title": args.title})
-        return ToolResult(True, f"decision {adr_id} proposed (status: proposed until accepted)", data={"id": adr_id})
+        ctx.services.events.emit(
+            "decision.proposed",
+            project_id=ctx.project_id,
+            task_id=ctx.task_id,
+            data={"decision_id": adr_id, "title": args.title},
+        )
+        return ToolResult(
+            True, f"decision {adr_id} proposed (status: proposed until accepted)", data={"id": adr_id}
+        )
 
 
 class AskUser(Tool):
     name = "ask_user"
-    description = "Ask the user a question when requirements are ambiguous or information is missing. Use sparingly."
+    description = (
+        "Ask the user a question when requirements are ambiguous or information is missing. Use sparingly."
+    )
     capability = Capability.CONTROL
 
     class Input(ToolInput):
@@ -222,22 +285,36 @@ class AskUser(Tool):
         handler = ctx.services.input_handler
         if handler is None:
             approval = ctx.services.approvals.request(
-                capability="user_input", summary=args.question[:300], request={"question": args.question, "context": args.context},
-                project_id=ctx.project_id, session_id=ctx.session_id, task_id=ctx.task_id, attempt_id=ctx.attempt_id, tool_call_id=None,
+                capability="user_input",
+                summary=args.question[:300],
+                request={"question": args.question, "context": args.context},
+                project_id=ctx.project_id,
+                session_id=ctx.session_id,
+                task_id=ctx.task_id,
+                attempt_id=ctx.attempt_id,
+                tool_call_id=None,
             )
-            raise SuspendRequested("input", approval_id=approval.id, question=args.question, reason="question for the user")
+            raise SuspendRequested(
+                "input", approval_id=approval.id, question=args.question, reason="question for the user"
+            )
         if ctx.task_id:
-            ctx.services.tasks.transition(ctx.task_id, TaskStatus.NEEDS_INPUT, reason=args.question[:200], fence=ctx.fence)
+            ctx.services.tasks.transition(
+                ctx.task_id, TaskStatus.NEEDS_INPUT, reason=args.question[:200], fence=ctx.fence
+            )
         answer = await ctx.cancel.run(handler(args.question, args.context))
         if ctx.task_id:
-            ctx.services.tasks.transition(ctx.task_id, TaskStatus.RUNNING, reason="user answered", fence=ctx.fence)
+            ctx.services.tasks.transition(
+                ctx.task_id, TaskStatus.RUNNING, reason="user answered", fence=ctx.fence
+            )
         return ToolResult(True, f"user answered: {answer}")
 
 
 class SpawnSubtask(Tool):
     name = "spawn_subtask"
-    description = ("Delegate an independent, well-scoped subtask (e.g. focused research) to another worker. Bounded by depth and "
-                   "fan-out budgets. Returns the subtask id; its result is added to your context when it finishes.")
+    description = (
+        "Delegate an independent, well-scoped subtask (e.g. focused research) to another worker. Bounded by depth and "
+        "fan-out budgets. Returns the subtask id; its result is added to your context when it finishes."
+    )
     capability = Capability.TASK_SPAWN
 
     class Input(ToolInput):
@@ -253,5 +330,14 @@ class SpawnSubtask(Tool):
         return ToolResult(True, result)
 
 
-CONTROL_TOOLS: list[type[Tool]] = [SubmitPlan, SubmitResult, SubmitAnswer, SubmitReview, RecordHypothesis, RecordExperiment,
-                                   RecordDecision, AskUser, SpawnSubtask]
+CONTROL_TOOLS: list[type[Tool]] = [
+    SubmitPlan,
+    SubmitResult,
+    SubmitAnswer,
+    SubmitReview,
+    RecordHypothesis,
+    RecordExperiment,
+    RecordDecision,
+    AskUser,
+    SpawnSubtask,
+]

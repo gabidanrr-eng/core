@@ -31,7 +31,9 @@ class LeaseManager:
     def acquire(self, resource: str, owner: str, ttl_s: float) -> Fence | None:
         now = self.clock.now()
         with self.db.tx() as conn:
-            row = conn.execute("SELECT owner, token, expires_at, released_at FROM leases WHERE resource = ?", (resource,)).fetchone()
+            row = conn.execute(
+                "SELECT owner, token, expires_at, released_at FROM leases WHERE resource = ?", (resource,)
+            ).fetchone()
             if row is None:
                 conn.execute(
                     "INSERT INTO leases(resource, owner, token, acquired_at, expires_at) VALUES (?,?,?,?,?)",
@@ -67,8 +69,15 @@ class LeaseManager:
             return cur.rowcount == 1
 
     def verify(self, conn: sqlite3.Connection, fence: Fence) -> None:
-        row = conn.execute("SELECT owner, token, expires_at, released_at FROM leases WHERE resource = ?", (fence.resource,)).fetchone()
-        if row is None or int(row["token"]) != fence.token or row["owner"] != fence.owner or row["released_at"] is not None:
+        row = conn.execute(
+            "SELECT owner, token, expires_at, released_at FROM leases WHERE resource = ?", (fence.resource,)
+        ).fetchone()
+        if (
+            row is None
+            or int(row["token"]) != fence.token
+            or row["owner"] != fence.owner
+            or row["released_at"] is not None
+        ):
             raise LeaseLostError(
                 f"lease on {fence.resource} is no longer held by this worker (token {fence.token})",
                 details={"resource": fence.resource, "token": fence.token},
@@ -85,7 +94,9 @@ class LeaseManager:
     def force_expire(self, resource: str) -> None:
         """Administrative/test helper: expire a lease immediately (the holder is fenced out)."""
         with self.db.tx() as conn:
-            conn.execute("UPDATE leases SET expires_at = ? WHERE resource = ?", (self.clock.now() - 1, resource))
+            conn.execute(
+                "UPDATE leases SET expires_at = ? WHERE resource = ?", (self.clock.now() - 1, resource)
+            )
 
     def holder(self, resource: str) -> sqlite3.Row | None:
         return self.db.one("SELECT * FROM leases WHERE resource = ?", (resource,))

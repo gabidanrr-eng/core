@@ -44,9 +44,23 @@ class Approval:
 
     @classmethod
     def from_row(cls, r: Any) -> Approval:
-        return cls(r["id"], r["project_id"], r["session_id"], r["task_id"], r["attempt_id"], r["tool_call_id"], r["capability"],
-                   r["summary"], loads(r["request_json"], {}), r["status"], r["scope"], r["decided_by"], r["reason"],
-                   r["created_at"], r["decided_at"])
+        return cls(
+            r["id"],
+            r["project_id"],
+            r["session_id"],
+            r["task_id"],
+            r["attempt_id"],
+            r["tool_call_id"],
+            r["capability"],
+            r["summary"],
+            loads(r["request_json"], {}),
+            r["status"],
+            r["scope"],
+            r["decided_by"],
+            r["reason"],
+            r["created_at"],
+            r["decided_at"],
+        )
 
     @property
     def approved(self) -> bool:
@@ -64,20 +78,52 @@ class ApprovalService:
         self.clock = clock
         self._futures: dict[str, asyncio.Future[Approval]] = {}
 
-    def request(self, *, capability: str, summary: str, request: dict[str, Any], project_id: str | None,
-                session_id: str | None, task_id: str | None, attempt_id: str | None, tool_call_id: str | None) -> Approval:
+    def request(
+        self,
+        *,
+        capability: str,
+        summary: str,
+        request: dict[str, Any],
+        project_id: str | None,
+        session_id: str | None,
+        task_id: str | None,
+        attempt_id: str | None,
+        tool_call_id: str | None,
+    ) -> Approval:
         now = self.clock.now()
         approval_id = new_id("apr", now=now)
         with self.db.tx() as conn:
             conn.execute(
                 "INSERT INTO approvals(id, project_id, session_id, task_id, attempt_id, tool_call_id, capability, summary, request_json, "
                 "status, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                (approval_id, project_id, session_id, task_id, attempt_id, tool_call_id, capability, summary,
-                 dumps(request), "pending", now),
+                (
+                    approval_id,
+                    project_id,
+                    session_id,
+                    task_id,
+                    attempt_id,
+                    tool_call_id,
+                    capability,
+                    summary,
+                    dumps(request),
+                    "pending",
+                    now,
+                ),
             )
-            self.events.emit("approval.requested", project_id=project_id, session_id=session_id, task_id=task_id,
-                             attempt_id=attempt_id, level="warning",
-                             data={"approval_id": approval_id, "capability": capability, "summary": summary, "request": request})
+            self.events.emit(
+                "approval.requested",
+                project_id=project_id,
+                session_id=session_id,
+                task_id=task_id,
+                attempt_id=attempt_id,
+                level="warning",
+                data={
+                    "approval_id": approval_id,
+                    "capability": capability,
+                    "summary": summary,
+                    "request": request,
+                },
+            )
         return self.get(approval_id)
 
     def get(self, approval_id: str) -> Approval:
@@ -103,8 +149,16 @@ class ApprovalService:
             params.append(task_id)
         return [Approval.from_row(r) for r in self.db.query(sql + " ORDER BY created_at", params)]
 
-    def decide(self, approval_id: str, approved: bool, *, scope: Scope = "once", actor: str = "user",
-               reason: str | None = None, pattern: str | None = None) -> Approval:
+    def decide(
+        self,
+        approval_id: str,
+        approved: bool,
+        *,
+        scope: Scope = "once",
+        actor: str = "user",
+        reason: str | None = None,
+        pattern: str | None = None,
+    ) -> Approval:
         approval = self.get(approval_id)
         if approval.status != "pending":
             if (approval.status == "approved") == approved:
@@ -119,15 +173,24 @@ class ApprovalService:
             if scope != "once":
                 target = pattern or str(approval.request.get("target", "*"))
                 self.policy.grant(
-                    approval.capability, pattern=target, decision="allow" if approved else "deny", granted_by="approval",
+                    approval.capability,
+                    pattern=target,
+                    decision="allow" if approved else "deny",
+                    granted_by="approval",
                     project_id=approval.project_id,
                     session_id=approval.session_id if scope in ("session", "task") else None,
                     task_id=approval.task_id if scope == "task" else None,
                     reason=f"approval {approval_id} ({scope})",
                 )
-            self.events.emit("approval.decided", project_id=approval.project_id, session_id=approval.session_id,
-                             task_id=approval.task_id, attempt_id=approval.attempt_id, actor=actor,
-                             data={"approval_id": approval_id, "approved": approved, "scope": scope, "reason": reason})
+            self.events.emit(
+                "approval.decided",
+                project_id=approval.project_id,
+                session_id=approval.session_id,
+                task_id=approval.task_id,
+                attempt_id=approval.attempt_id,
+                actor=actor,
+                data={"approval_id": approval_id, "approved": approved, "scope": scope, "reason": reason},
+            )
         decided = self.get(approval_id)
         fut = self._futures.pop(approval_id, None)
         if fut is not None and not fut.done():
@@ -152,5 +215,7 @@ class ApprovalService:
             self._futures.pop(approval_id, None)
 
     def cancel_for_task(self, task_id: str) -> None:
-        self.db.execute("UPDATE approvals SET status = 'cancelled', decided_at = ? WHERE task_id = ? AND status = 'pending'",
-                        (self.clock.now(), task_id))
+        self.db.execute(
+            "UPDATE approvals SET status = 'cancelled', decided_at = ? WHERE task_id = ? AND status = 'pending'",
+            (self.clock.now(), task_id),
+        )

@@ -133,7 +133,9 @@ class MCPError(CoreError):
     code = "mcp_error"
     exit_code = ExitCode.BLOCKED
 
-    def __init__(self, message: str, *, error_class: str = "mcp_failed", server: str | None = None, **kw: Any):
+    def __init__(
+        self, message: str, *, error_class: str = "mcp_failed", server: str | None = None, **kw: Any
+    ):
         super().__init__(message, **kw)
         self.error_class = error_class
         self.server = server

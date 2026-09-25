@@ -38,8 +38,14 @@ class RecoveryReport:
 
     @property
     def changed(self) -> bool:
-        return bool(self.stale_runtimes or self.interrupted_tasks or self.unknown_tasks or self.killed_processes
-                    or self.interrupted_tool_calls or self.orphaned_workspaces)
+        return bool(
+            self.stale_runtimes
+            or self.interrupted_tasks
+            or self.unknown_tasks
+            or self.killed_processes
+            or self.interrupted_tool_calls
+            or self.orphaned_workspaces
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return dict(self.__dict__)
@@ -57,7 +63,9 @@ def recover(rt: CoreRuntime, *, kill_orphans: bool = False, dry_run: bool = Fals
             report.stale_runtimes.append(r["id"])
             if not dry_run:
                 db.execute("UPDATE runtimes SET status = 'dead', stopped_at = ? WHERE id = ?", (now, r["id"]))
-    dead_runtimes = {r["id"] for r in db.query("SELECT id FROM runtimes WHERE status <> 'running'")} | set(report.stale_runtimes)
+    dead_runtimes = {r["id"] for r in db.query("SELECT id FROM runtimes WHERE status <> 'running'")} | set(
+        report.stale_runtimes
+    )
     for lease in rt.leases.expired():
         resource = lease["resource"]
         if not resource.startswith("task:"):
@@ -67,9 +75,15 @@ def recover(rt: CoreRuntime, *, kill_orphans: bool = False, dry_run: bool = Fals
             task = rt.tasks.get(task_id)
         except CoreError:
             continue
-        attempt = db.one("SELECT * FROM attempts WHERE task_id = ? AND fence_token = ? ORDER BY number DESC LIMIT 1", (task_id, lease["token"]))
+        attempt = db.one(
+            "SELECT * FROM attempts WHERE task_id = ? AND fence_token = ? ORDER BY number DESC LIMIT 1",
+            (task_id, lease["token"]),
+        )
         if not dry_run:
-            db.execute("UPDATE leases SET owner = NULL, released_at = ? WHERE resource = ? AND token = ?", (now, resource, lease["token"]))
+            db.execute(
+                "UPDATE leases SET owner = NULL, released_at = ? WHERE resource = ? AND token = ?",
+                (now, resource, lease["token"]),
+            )
         if attempt is None or attempt["status"] != AttemptStatus.RUNNING.value:
             continue
         checkpoint_node = None
@@ -80,21 +94,46 @@ def recover(rt: CoreRuntime, *, kill_orphans: bool = False, dry_run: bool = Fals
         except ValueError:
             checkpoint_node = None
         ambiguous = checkpoint_node == "finalize"
-        entry = {"task": task_id, "attempt": attempt["id"], "node": checkpoint_node, "status": task.status.value}
+        entry = {
+            "task": task_id,
+            "attempt": attempt["id"],
+            "node": checkpoint_node,
+            "status": task.status.value,
+        }
         if dry_run:
             (report.unknown_tasks if ambiguous else report.interrupted_tasks).append(entry)
             continue
-        db.execute("UPDATE attempts SET status = ?, ended_at = ?, error_class = 'interrupted', error_message = ? WHERE id = ?",
-                   (AttemptStatus.INTERRUPTED.value, now, "owner runtime stopped without finishing (lease expired)", attempt["id"]))
+        db.execute(
+            "UPDATE attempts SET status = ?, ended_at = ?, error_class = 'interrupted', error_message = ? WHERE id = ?",
+            (
+                AttemptStatus.INTERRUPTED.value,
+                now,
+                "owner runtime stopped without finishing (lease expired)",
+                attempt["id"],
+            ),
+        )
         report.interrupted_tool_calls += db.execute(
-            "UPDATE tool_calls SET status = 'interrupted', ended_at = ? WHERE attempt_id = ? AND status = 'running'", (now, attempt["id"])).rowcount
+            "UPDATE tool_calls SET status = 'interrupted', ended_at = ? WHERE attempt_id = ? AND status = 'running'",
+            (now, attempt["id"]),
+        ).rowcount
         report.cancelled_model_calls += db.execute(
-            "UPDATE model_calls SET status = 'cancelled', ended_at = ? WHERE attempt_id = ? AND status = 'running'", (now, attempt["id"])).rowcount
-        rt.events.emit("recovery.attempt_interrupted", project_id=task.project_id, task_id=task_id, attempt_id=attempt["id"], level="warning",
-                       data={"node": checkpoint_node, "previous_status": task.status.value})
+            "UPDATE model_calls SET status = 'cancelled', ended_at = ? WHERE attempt_id = ? AND status = 'running'",
+            (now, attempt["id"]),
+        ).rowcount
+        rt.events.emit(
+            "recovery.attempt_interrupted",
+            project_id=task.project_id,
+            task_id=task_id,
+            attempt_id=attempt["id"],
+            level="warning",
+            data={"node": checkpoint_node, "previous_status": task.status.value},
+        )
         if task.status in ACTIVE or task.status in {TaskStatus.AWAITING_APPROVAL, TaskStatus.NEEDS_INPUT}:
-            reason = ("interrupted during finalization; workspace/apply state must be inspected" if ambiguous
-                      else f"runtime stopped during '{checkpoint_node}'; resumable from checkpoint")
+            reason = (
+                "interrupted during finalization; workspace/apply state must be inspected"
+                if ambiguous
+                else f"runtime stopped during '{checkpoint_node}'; resumable from checkpoint"
+            )
             try:
                 rt.tasks.transition(task_id, TaskStatus.INTERRUPTED, reason=reason, actor="recovery")
                 if ambiguous:
@@ -110,7 +149,9 @@ def recover(rt: CoreRuntime, *, kill_orphans: bool = False, dry_run: bool = Fals
         info = {"pid": proc["pid"], "command": proc["command"][:200], "task": proc["task_id"], "alive": alive}
         if not alive:
             if not dry_run:
-                db.execute("UPDATE processes SET status = 'reaped', ended_at = ? WHERE id = ?", (now, proc["id"]))
+                db.execute(
+                    "UPDATE processes SET status = 'reaped', ended_at = ? WHERE id = ?", (now, proc["id"])
+                )
             continue
         report.orphan_processes.append(info)
         if kill_orphans and not dry_run:
@@ -131,5 +172,7 @@ def recover(rt: CoreRuntime, *, kill_orphans: bool = False, dry_run: bool = Fals
             if not dry_run:
                 rt.workspaces.set_status(ws, "orphaned", reason="workspace directory missing")
     if report.changed and not dry_run:
-        rt.events.emit("recovery.completed", level="warning", data={k: v for k, v in report.to_dict().items() if v})
+        rt.events.emit(
+            "recovery.completed", level="warning", data={k: v for k, v in report.to_dict().items() if v}
+        )
     return report

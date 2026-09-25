@@ -91,11 +91,39 @@ class ArtifactStore:
         self.db.execute(
             "INSERT INTO artifacts(id, project_id, task_id, attempt_id, kind, name, sha256, size, media_type, state, meta_json, created_at) "
             "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-            (artifact_id, project_id, task_id, attempt_id, kind, name, sha, len(data), media_type, state, dumps(meta or {}), now),
+            (
+                artifact_id,
+                project_id,
+                task_id,
+                attempt_id,
+                kind,
+                name,
+                sha,
+                len(data),
+                media_type,
+                state,
+                dumps(meta or {}),
+                now,
+            ),
         )
-        return Artifact(artifact_id, project_id, task_id, attempt_id, kind, name, sha, len(data), media_type, state, meta or {}, now)
+        return Artifact(
+            artifact_id,
+            project_id,
+            task_id,
+            attempt_id,
+            kind,
+            name,
+            sha,
+            len(data),
+            media_type,
+            state,
+            meta or {},
+            now,
+        )
 
-    def put_text(self, text: str, *, redact: bool = True, media_type: str = "text/plain; charset=utf-8", **kw: Any) -> Artifact:
+    def put_text(
+        self, text: str, *, redact: bool = True, media_type: str = "text/plain; charset=utf-8", **kw: Any
+    ) -> Artifact:
         if redact:
             text = self.redactor.redact(text)
         return self.put_bytes(text.encode("utf-8"), media_type=media_type, **kw)
@@ -108,8 +136,20 @@ class ArtifactStore:
         r = self.db.one("SELECT * FROM artifacts WHERE id = ?", (artifact_id,))
         if r is None:
             raise NotFoundError(f"artifact {artifact_id} not found")
-        return Artifact(r["id"], r["project_id"], r["task_id"], r["attempt_id"], r["kind"], r["name"], r["sha256"], r["size"],
-                        r["media_type"], r["state"], loads(r["meta_json"], {}), r["created_at"])
+        return Artifact(
+            r["id"],
+            r["project_id"],
+            r["task_id"],
+            r["attempt_id"],
+            r["kind"],
+            r["name"],
+            r["sha256"],
+            r["size"],
+            r["media_type"],
+            r["state"],
+            loads(r["meta_json"], {}),
+            r["created_at"],
+        )
 
     def read_bytes(self, artifact_id: str, *, project_id: str | None = None, verify: bool = True) -> bytes:
         art = self.get(artifact_id)
@@ -119,7 +159,9 @@ class ArtifactStore:
         try:
             data = path.read_bytes()
         except FileNotFoundError as exc:
-            raise IntegrityFailure(f"artifact blob missing for {artifact_id}", hint="Run `core doctor`.") from exc
+            raise IntegrityFailure(
+                f"artifact blob missing for {artifact_id}", hint="Run `core doctor`."
+            ) from exc
         if verify and sha256_hex(data) != art.sha256:
             raise IntegrityFailure(f"artifact {artifact_id} failed hash verification (corrupted blob)")
         return data
@@ -131,7 +173,11 @@ class ArtifactStore:
         return loads(self.read_bytes(artifact_id, **kw))
 
     def for_task(self, task_id: str, kind: str | None = None) -> list[Artifact]:
-        sql = "SELECT id FROM artifacts WHERE task_id = ?" + (" AND kind = ?" if kind else "") + " ORDER BY created_at"
+        sql = (
+            "SELECT id FROM artifacts WHERE task_id = ?"
+            + (" AND kind = ?" if kind else "")
+            + " ORDER BY created_at"
+        )
         params = (task_id, kind) if kind else (task_id,)
         return [self.get(r["id"]) for r in self.db.query(sql, params)]
 
@@ -140,7 +186,9 @@ class ArtifactStore:
 
     def verify(self, *, limit: int | None = None) -> list[str]:
         problems: list[str] = []
-        sql = "SELECT id, sha256, size FROM artifacts" + (f" ORDER BY created_at DESC LIMIT {int(limit)}" if limit else "")
+        sql = "SELECT id, sha256, size FROM artifacts" + (
+            f" ORDER BY created_at DESC LIMIT {int(limit)}" if limit else ""
+        )
         for r in self.db.query(sql):
             path = self.blob_path(r["sha256"])
             if not path.exists():
@@ -155,7 +203,9 @@ class ArtifactStore:
         work) are never expired."""
         report = GcReport()
         cutoff = self.clock.now() - max_age_s
-        rows = self.db.query("SELECT id, task_id, state FROM artifacts WHERE state = 'live' AND created_at < ?", (cutoff,))
+        rows = self.db.query(
+            "SELECT id, task_id, state FROM artifacts WHERE state = 'live' AND created_at < ?", (cutoff,)
+        )
         expire: list[str] = []
         for r in rows:
             if r["task_id"] and r["task_id"] in keep_task_ids:
@@ -166,7 +216,9 @@ class ArtifactStore:
         expire_set = set(expire)
         if not dry_run and expire:
             with self.db.tx() as conn:
-                conn.executemany("UPDATE artifacts SET state = 'expired' WHERE id = ?", [(i,) for i in expire])
+                conn.executemany(
+                    "UPDATE artifacts SET state = 'expired' WHERE id = ?", [(i,) for i in expire]
+                )
         referenced = {
             r["sha256"]
             for r in self.db.query("SELECT id, sha256 FROM artifacts WHERE state <> 'expired'")
@@ -188,5 +240,7 @@ class ArtifactStore:
                     tmp.unlink(missing_ok=True)
         if not dry_run and expire:
             with self.db.tx() as conn:
-                conn.executemany("DELETE FROM artifacts WHERE id = ? AND state = 'expired'", [(i,) for i in expire])
+                conn.executemany(
+                    "DELETE FROM artifacts WHERE id = ? AND state = 'expired'", [(i,) for i in expire]
+                )
         return report

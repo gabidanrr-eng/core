@@ -63,7 +63,7 @@ class ProcessResult:
         text = "\n".join(parts)
         if len(text) > limit:
             head = limit // 3
-            text = text[:head] + f"\n… [{len(text) - limit} chars omitted] …\n" + text[-(limit - head):]
+            text = text[:head] + f"\n… [{len(text) - limit} chars omitted] …\n" + text[-(limit - head) :]
         return text
 
 
@@ -84,7 +84,7 @@ class _Capture:
             take = text[: half - self.head_len]
             self.head.append(take)
             self.head_len += len(take)
-            text = text[len(take):]
+            text = text[len(take) :]
         if not text:
             return
         self.tail.append(text)
@@ -161,22 +161,44 @@ class ProcessRunner:
     def active_count(self) -> int:
         return len(self._active)
 
-    def _register(self, proc_id: str, pid: int, command: str, cwd: Path, task_id: str | None, attempt_id: str | None,
-                  tool_call_id: str | None) -> None:
+    def _register(
+        self,
+        proc_id: str,
+        pid: int,
+        command: str,
+        cwd: Path,
+        task_id: str | None,
+        attempt_id: str | None,
+        tool_call_id: str | None,
+    ) -> None:
         if self.db is None:
             return
         self.db.execute(
             "INSERT INTO processes(id, runtime_id, task_id, attempt_id, tool_call_id, pid, pgid, start_ticks, command, cwd, status, started_at) "
             "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-            (proc_id, self.runtime_id, task_id, attempt_id, tool_call_id, pid, pid, _start_ticks(pid), command[:4000], str(cwd),
-             "running", self.clock.now()),
+            (
+                proc_id,
+                self.runtime_id,
+                task_id,
+                attempt_id,
+                tool_call_id,
+                pid,
+                pid,
+                _start_ticks(pid),
+                command[:4000],
+                str(cwd),
+                "running",
+                self.clock.now(),
+            ),
         )
 
     def _finish(self, proc_id: str, status: str, exit_code: int | None) -> None:
         if self.db is None:
             return
-        self.db.execute("UPDATE processes SET status = ?, exit_code = ?, ended_at = ? WHERE id = ?",
-                        (status, exit_code, self.clock.now(), proc_id))
+        self.db.execute(
+            "UPDATE processes SET status = ?, exit_code = ?, ended_at = ? WHERE id = ?",
+            (status, exit_code, self.clock.now(), proc_id),
+        )
 
     async def run(
         self,
@@ -224,7 +246,9 @@ class ProcessRunner:
         except FileNotFoundError as exc:
             raise ToolError(f"command not found: {exec_argv[0]}", error_class="command_not_found") from exc
         except PermissionError as exc:
-            raise ToolError(f"permission denied executing {exec_argv[0]}", error_class="permission_denied") from exc
+            raise ToolError(
+                f"permission denied executing {exec_argv[0]}", error_class="permission_denied"
+            ) from exc
         proc_id = new_id("prc")
         self._register(proc_id, proc.pid, display, cwd, task_id, attempt_id, tool_call_id)
         self._active[proc_id] = proc
@@ -309,9 +333,20 @@ class ProcessRunner:
         self._active.pop(proc_id, None)
         sig = -exit_code if exit_code is not None and exit_code < 0 else None
         result = ProcessResult(
-            command=display, cwd=str(cwd), status=status, exit_code=exit_code, stdout=out_cap.text(), stderr=err_cap.text(),
-            duration_s=time.monotonic() - started, stdout_bytes=out_cap.total_bytes, stderr_bytes=err_cap.total_bytes,
-            truncated=truncated, spool_path=spool_path, process_id=proc_id, signal=sig, notes=notes,
+            command=display,
+            cwd=str(cwd),
+            status=status,
+            exit_code=exit_code,
+            stdout=out_cap.text(),
+            stderr=err_cap.text(),
+            duration_s=time.monotonic() - started,
+            stdout_bytes=out_cap.total_bytes,
+            stderr_bytes=err_cap.total_bytes,
+            truncated=truncated,
+            spool_path=spool_path,
+            process_id=proc_id,
+            signal=sig,
+            notes=notes,
         )
         if status == "cancelled" and cancel is not None:
             raise OperationCancelled(cancel.reason or "cancelled", details={"command": display})

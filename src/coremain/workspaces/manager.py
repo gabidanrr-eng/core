@@ -36,10 +36,30 @@ from coremain.util.ids import new_id, short_id
 from coremain.util.jsonutil import dumps, loads, sha256_hex
 from coremain.workspaces.git import Git, has_commits, is_git_repo
 
-COPY_IGNORES = frozenset({
-    ".git", "node_modules", ".venv", "venv", "__pycache__", ".mypy_cache", ".pytest_cache", ".ruff_cache", "dist", "build",
-    "target", ".next", ".nuxt", ".tox", ".cache", ".gradle", ".idea", ".DS_Store", "coverage", ".coverage",
-})
+COPY_IGNORES = frozenset(
+    {
+        ".git",
+        "node_modules",
+        ".venv",
+        "venv",
+        "__pycache__",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        "dist",
+        "build",
+        "target",
+        ".next",
+        ".nuxt",
+        ".tox",
+        ".cache",
+        ".gradle",
+        ".idea",
+        ".DS_Store",
+        "coverage",
+        ".coverage",
+    }
+)
 SHADOW_EXCLUDES = "\n".join(sorted(COPY_IGNORES | {".core/cache", ".core/tmp"})) + "\n"
 _IDENT = ("-c", "user.name=Core Main", "-c", "user.email=core-main@localhost", "-c", "commit.gpgsign=false")
 
@@ -64,8 +84,19 @@ class Workspace:
 
     @classmethod
     def from_row(cls, r: Any) -> Workspace:
-        return cls(r["id"], r["project_id"], r["kind"], Path(r["path"]), r["branch"], r["base_ref"], r["status"],
-                   r["owner_task_id"], r["owner_attempt_id"], loads(r["meta_json"], {}), r["created_at"])
+        return cls(
+            r["id"],
+            r["project_id"],
+            r["kind"],
+            Path(r["path"]),
+            r["branch"],
+            r["base_ref"],
+            r["status"],
+            r["owner_task_id"],
+            r["owner_attempt_id"],
+            loads(r["meta_json"], {}),
+            r["created_at"],
+        )
 
     def to_dict(self) -> dict[str, Any]:
         d = dict(self.__dict__)
@@ -132,8 +163,15 @@ def _is_text(*blobs: bytes | None) -> bool:
 
 
 class WorkspaceManager:
-    def __init__(self, db: Database, events: EventLog, artifacts: ArtifactStore, paths: CorePaths, clock: Clock,
-                 config: WorkspaceConfig):
+    def __init__(
+        self,
+        db: Database,
+        events: EventLog,
+        artifacts: ArtifactStore,
+        paths: CorePaths,
+        clock: Clock,
+        config: WorkspaceConfig,
+    ):
         self.db = db
         self.events = events
         self.artifacts = artifacts
@@ -143,14 +181,39 @@ class WorkspaceManager:
         self._locks: dict[str, asyncio.Lock] = {}
 
     # ----------------------------------------------------------------- records
-    def _insert(self, *, project_id: str, kind: str, path: Path, branch: str | None, base_ref: str | None, status: str,
-                task_id: str | None, attempt_id: str | None, meta: dict[str, Any], ws_id: str | None = None) -> Workspace:
+    def _insert(
+        self,
+        *,
+        project_id: str,
+        kind: str,
+        path: Path,
+        branch: str | None,
+        base_ref: str | None,
+        status: str,
+        task_id: str | None,
+        attempt_id: str | None,
+        meta: dict[str, Any],
+        ws_id: str | None = None,
+    ) -> Workspace:
         now = self.clock.now()
         ws_id = ws_id or new_id("ws", now=now)
         self.db.execute(
             "INSERT INTO workspaces(id, project_id, kind, path, branch, base_ref, status, owner_task_id, owner_attempt_id, meta_json, "
             "created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-            (ws_id, project_id, kind, str(path), branch, base_ref, status, task_id, attempt_id, dumps(meta), now, now),
+            (
+                ws_id,
+                project_id,
+                kind,
+                str(path),
+                branch,
+                base_ref,
+                status,
+                task_id,
+                attempt_id,
+                dumps(meta),
+                now,
+                now,
+            ),
         )
         return self.get(ws_id)
 
@@ -160,7 +223,9 @@ class WorkspaceManager:
             raise NotFoundError(f"workspace {ws_id} not found")
         return Workspace.from_row(row)
 
-    def list(self, project_id: str | None = None, *, statuses: tuple[str, ...] | None = None) -> list[Workspace]:
+    def list(
+        self, project_id: str | None = None, *, statuses: tuple[str, ...] | None = None
+    ) -> list[Workspace]:
         sql = "SELECT * FROM workspaces WHERE 1=1"
         params: list[Any] = []
         if project_id:
@@ -173,10 +238,20 @@ class WorkspaceManager:
 
     def set_status(self, ws: Workspace, status: str, **meta: Any) -> Workspace:
         merged = {**ws.meta, **meta}
-        self.db.execute("UPDATE workspaces SET status = ?, meta_json = ?, updated_at = ? WHERE id = ?",
-                        (status, dumps(merged), self.clock.now(), ws.id))
-        self.events.emit("workspace.status", project_id=ws.project_id, task_id=ws.owner_task_id,
-                         data={"workspace_id": ws.id, "status": status, **{k: v for k, v in meta.items() if isinstance(v, (str, int, float, bool))}})
+        self.db.execute(
+            "UPDATE workspaces SET status = ?, meta_json = ?, updated_at = ? WHERE id = ?",
+            (status, dumps(merged), self.clock.now(), ws.id),
+        )
+        self.events.emit(
+            "workspace.status",
+            project_id=ws.project_id,
+            task_id=ws.owner_task_id,
+            data={
+                "workspace_id": ws.id,
+                "status": status,
+                **{k: v for k, v in meta.items() if isinstance(v, (str, int, float, bool))},
+            },
+        )
         return self.get(ws.id)
 
     def lock(self, key: str) -> asyncio.Lock:
@@ -211,27 +286,55 @@ class WorkspaceManager:
 
     # --------------------------------------------------------------- creation
     def canonical(self, project: Project) -> Workspace:
-        row = self.db.one("SELECT * FROM workspaces WHERE project_id = ? AND kind = 'canonical' AND base_ref IS NULL "
-                          "AND status = 'active' ORDER BY created_at LIMIT 1", (project.id,))
+        row = self.db.one(
+            "SELECT * FROM workspaces WHERE project_id = ? AND kind = 'canonical' AND base_ref IS NULL "
+            "AND status = 'active' ORDER BY created_at LIMIT 1",
+            (project.id,),
+        )
         if row is not None:
             return Workspace.from_row(row)
-        return self._insert(project_id=project.id, kind="canonical", path=Path(project.root_path), branch=None, base_ref=None,
-                            status="active", task_id=None, attempt_id=None, meta={"read_only_view": True})
+        return self._insert(
+            project_id=project.id,
+            kind="canonical",
+            path=Path(project.root_path),
+            branch=None,
+            base_ref=None,
+            status="active",
+            task_id=None,
+            attempt_id=None,
+            meta={"read_only_view": True},
+        )
 
     async def create_direct(self, project: Project, task_id: str, attempt_id: str | None) -> Workspace:
         """Direct mode: the canonical tree itself, with a shadow-repo baseline for diff/undo."""
         root = Path(project.root_path)
         git = await self._ensure_shadow(project.id, root)
-        ws = self._insert(project_id=project.id, kind="canonical", path=root, branch=None, base_ref=None, status="active",
-                          task_id=task_id, attempt_id=attempt_id, meta={"direct": True})
-        base = await self._commit_state(git.with_index(self._index_file(ws)), f"core: direct-mode baseline for {task_id}", [])
+        ws = self._insert(
+            project_id=project.id,
+            kind="canonical",
+            path=root,
+            branch=None,
+            base_ref=None,
+            status="active",
+            task_id=task_id,
+            attempt_id=attempt_id,
+            meta={"direct": True},
+        )
+        base = await self._commit_state(
+            git.with_index(self._index_file(ws)), f"core: direct-mode baseline for {task_id}", []
+        )
         self.db.execute("UPDATE workspaces SET base_ref = ? WHERE id = ?", (base, ws.id))
-        self.events.emit("workspace.created", project_id=project.id, task_id=task_id,
-                         data={"workspace_id": ws.id, "kind": "canonical", "direct": True})
+        self.events.emit(
+            "workspace.created",
+            project_id=project.id,
+            task_id=task_id,
+            data={"workspace_id": ws.id, "kind": "canonical", "direct": True},
+        )
         return self.get(ws.id)
 
-    async def create_isolated(self, project: Project, task_id: str, attempt_id: str | None, *,
-                              from_commit: str | None = None) -> Workspace:
+    async def create_isolated(
+        self, project: Project, task_id: str, attempt_id: str | None, *, from_commit: str | None = None
+    ) -> Workspace:
         root = Path(project.root_path)
         ws_id = new_id("ws")
         dest = self.paths.workspaces_dir / project.id / short_id(ws_id, 10).split("_", 1)[1]
@@ -256,13 +359,29 @@ class WorkspaceManager:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.symlink_to(src, target_is_directory=src.is_dir())
                 shared.append(rel)
-        ws = self._insert(project_id=project.id, kind=kind, path=dest, branch=branch, base_ref=None, status="active",
-                          task_id=task_id, attempt_id=attempt_id, meta={"shared": shared, "source": str(root)}, ws_id=ws_id)
+        ws = self._insert(
+            project_id=project.id,
+            kind=kind,
+            path=dest,
+            branch=branch,
+            base_ref=None,
+            status="active",
+            task_id=task_id,
+            attempt_id=attempt_id,
+            meta={"shared": shared, "source": str(root)},
+            ws_id=ws_id,
+        )
         git = Git(dest)
-        base = await self._commit_state(git, f"core: baseline for {task_id}", self._excludes(ws), commit_to_head=True)
+        base = await self._commit_state(
+            git, f"core: baseline for {task_id}", self._excludes(ws), commit_to_head=True
+        )
         self.db.execute("UPDATE workspaces SET base_ref = ? WHERE id = ?", (base, ws.id))
-        self.events.emit("workspace.created", project_id=project.id, task_id=task_id,
-                         data={"workspace_id": ws.id, "kind": kind, "path": str(dest), "branch": branch, "shared": shared})
+        self.events.emit(
+            "workspace.created",
+            project_id=project.id,
+            task_id=task_id,
+            data={"workspace_id": ws.id, "kind": kind, "path": str(dest), "branch": branch, "shared": shared},
+        )
         return self.get(ws.id)
 
     async def _carry_uncommitted(self, root: Path, dest: Path) -> None:
@@ -275,7 +394,9 @@ class WorkspaceManager:
                 for raw in names:
                     if raw:
                         self._copy_file(root, dest, raw.decode())
-        untracked = (await src_git.run("ls-files", "--others", "--exclude-standard", "-z")).stdout.split(b"\x00")
+        untracked = (await src_git.run("ls-files", "--others", "--exclude-standard", "-z")).stdout.split(
+            b"\x00"
+        )
         for raw in untracked:
             if raw:
                 self._copy_file(root, dest, raw.decode())
@@ -316,7 +437,9 @@ class WorkspaceManager:
                 self._copy_file(root, dest, str(rel_dir / name))
         dest.mkdir(parents=True, exist_ok=True)
 
-    async def _commit_state(self, git: Git, message: str, excludes: list[str], *, commit_to_head: bool = False) -> str:
+    async def _commit_state(
+        self, git: Git, message: str, excludes: list[str], *, commit_to_head: bool = False
+    ) -> str:
         await git.run("add", "-A", "--", ".", *excludes)
         if commit_to_head:
             await git.run(*_IDENT, "commit", "--no-verify", "--allow-empty", "-q", "-m", message)
@@ -341,13 +464,17 @@ class WorkspaceManager:
             return WorkspaceDiff([], "", sha256_hex(""), fp)
         git = self.git_for(ws)
         tree = await self.fingerprint(ws)
-        names = (await git.run("diff", "--no-renames", "--name-status", "-z", ws.base_ref, tree)).stdout.split(b"\x00")
+        names = (
+            await git.run("diff", "--no-renames", "--name-status", "-z", ws.base_ref, tree)
+        ).stdout.split(b"\x00")
         files: list[FileChange] = []
         it = iter(n.decode() for n in names if n)
         for status_code in it:
             path = next(it, "")
             files.append(FileChange(status_code[:1], path))
-        patch = (await git.run("diff", "--no-renames", "--binary", ws.base_ref, tree)).stdout.decode("utf-8", errors="replace")
+        patch = (await git.run("diff", "--no-renames", "--binary", ws.base_ref, tree)).stdout.decode(
+            "utf-8", errors="replace"
+        )
         numstat = await git.out("diff", "--no-renames", "--numstat", ws.base_ref, tree)
         added = removed = 0
         for line in numstat.splitlines():
@@ -355,7 +482,9 @@ class WorkspaceManager:
             if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
                 added += int(parts[0])
                 removed += int(parts[1])
-        return WorkspaceDiff(files, patch, sha256_hex(patch), tree, {"files": len(files), "added": added, "removed": removed})
+        return WorkspaceDiff(
+            files, patch, sha256_hex(patch), tree, {"files": len(files), "added": added, "removed": removed}
+        )
 
     async def baseline_blob(self, ws: Workspace, rel: str) -> bytes | None:
         if ws.base_ref is None:
@@ -377,7 +506,11 @@ class WorkspaceManager:
             dst_file = dst_root / change.path
             cur = _read_bytes(dst_file)
             mode = None
-            if new is not None and (src.path / change.path).exists() and not (src.path / change.path).is_symlink():
+            if (
+                new is not None
+                and (src.path / change.path).exists()
+                and not (src.path / change.path).is_symlink()
+            ):
                 mode = stat.S_IMODE((src.path / change.path).stat().st_mode)
             if cur == new:
                 result.already.append(change.path)
@@ -390,9 +523,15 @@ class WorkspaceManager:
                     plan.append((change.path, merged, mode))
                     result.merged.append(change.path)
                 else:
-                    result.conflicts.append({"path": change.path, "reason": "concurrent edits overlap (3-way merge conflict)"})
+                    result.conflicts.append(
+                        {"path": change.path, "reason": "concurrent edits overlap (3-way merge conflict)"}
+                    )
             else:
-                why = "file was created concurrently" if base is None else "file changed concurrently and cannot be merged"
+                why = (
+                    "file was created concurrently"
+                    if base is None
+                    else "file changed concurrently and cannot be merged"
+                )
                 result.conflicts.append({"path": change.path, "reason": why})
         if result.conflicts or dry_run:
             return result
@@ -416,8 +555,20 @@ class WorkspaceManager:
             (t / "current").write_bytes(current)
             (t / "base").write_bytes(base)
             (t / "new").write_bytes(new)
-            res = await Git(t).run("merge-file", "-p", "-L", "canonical", "-L", "baseline", "-L", "task",
-                                   str(t / "current"), str(t / "base"), str(t / "new"), check=False)
+            res = await Git(t).run(
+                "merge-file",
+                "-p",
+                "-L",
+                "canonical",
+                "-L",
+                "baseline",
+                "-L",
+                "task",
+                str(t / "current"),
+                str(t / "base"),
+                str(t / "new"),
+                check=False,
+            )
             return res.stdout, res.code == 0
 
     async def apply_to_canonical(self, src: Workspace, project: Project) -> ApplyResult:
@@ -425,10 +576,17 @@ class WorkspaceManager:
             result = await self.apply(src, Path(project.root_path))
         if result.ok:
             self.set_status(src, "applied", applied_files=len(result.applied) + len(result.merged))
-            self.events.emit("workspace.applied", project_id=project.id, task_id=src.owner_task_id, data=result.to_dict())
+            self.events.emit(
+                "workspace.applied", project_id=project.id, task_id=src.owner_task_id, data=result.to_dict()
+            )
         else:
-            self.events.emit("workspace.conflict", project_id=project.id, task_id=src.owner_task_id, level="warning",
-                             data=result.to_dict())
+            self.events.emit(
+                "workspace.conflict",
+                project_id=project.id,
+                task_id=src.owner_task_id,
+                level="warning",
+                data=result.to_dict(),
+            )
             raise WorkspaceConflictError(
                 f"{len(result.conflicts)} file(s) changed in the canonical workspace conflict with the task's changes",
                 hint="Inspect with `core task diff`, resolve manually, then `core task apply` again; the task workspace is preserved.",
@@ -474,7 +632,14 @@ class WorkspaceManager:
             age = now - ws.created_at
             if ws.status == "active":
                 if owner_status in {"completed", "cancelled", "failed"} and age > keep_s:
-                    actions.append(GcAction(ws.id, str(ws.path), "delete", f"owner task {owner_status}; stale active workspace"))
+                    actions.append(
+                        GcAction(
+                            ws.id,
+                            str(ws.path),
+                            "delete",
+                            f"owner task {owner_status}; stale active workspace",
+                        )
+                    )
                 continue
             if ws.status in {"applied", "discarded", "released"}:
                 if age > keep_s or ws.status == "discarded":
@@ -482,9 +647,18 @@ class WorkspaceManager:
                 continue
             if ws.status == "preserved":
                 if owner_status in {"completed", "cancelled"} and age > keep_s:
-                    actions.append(GcAction(ws.id, str(ws.path), "delete", f"preserved workspace of {owner_status} task past retention"))
+                    actions.append(
+                        GcAction(
+                            ws.id,
+                            str(ws.path),
+                            "delete",
+                            f"preserved workspace of {owner_status} task past retention",
+                        )
+                    )
                 else:
-                    actions.append(GcAction(ws.id, str(ws.path), "keep", f"preserved for recovery (task {owner_status})"))
+                    actions.append(
+                        GcAction(ws.id, str(ws.path), "keep", f"preserved for recovery (task {owner_status})")
+                    )
         root = self.paths.workspaces_dir
         if root.exists():
             for project_dir in root.iterdir():
@@ -492,11 +666,19 @@ class WorkspaceManager:
                     continue
                 for child in project_dir.iterdir():
                     if str(child) not in known_paths:
-                        actions.append(GcAction(None, str(child), "delete" if force_orphans else "report",
-                                                "directory has no workspace record (orphan)"))
+                        actions.append(
+                            GcAction(
+                                None,
+                                str(child),
+                                "delete" if force_orphans else "report",
+                                "directory has no workspace record (orphan)",
+                            )
+                        )
         return actions
 
-    async def gc(self, *, task_status: dict[str, str], dry_run: bool = True, force_orphans: bool = False) -> list[GcAction]:
+    async def gc(
+        self, *, task_status: dict[str, str], dry_run: bool = True, force_orphans: bool = False
+    ) -> list[GcAction]:
         actions = self.gc_plan(task_status=task_status, force_orphans=force_orphans)
         if dry_run:
             return actions

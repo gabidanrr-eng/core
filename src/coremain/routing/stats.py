@@ -48,21 +48,28 @@ class ModelStats:
             f"FROM model_calls WHERE model_key = ? AND started_at > ?{role_sql} AND status IN ('ok','error')",
             params,
         )
-        stat = ModelStat(int(row["calls"] or 0), int(row["errors"] or 0), int(row["malformed"] or 0)) if row else ModelStat()
+        stat = (
+            ModelStat(int(row["calls"] or 0), int(row["errors"] or 0), int(row["malformed"] or 0))
+            if row
+            else ModelStat()
+        )
         blocking = self.db.one(
             "SELECT error_class, started_at FROM model_calls WHERE model_key = ? AND error_class IN "
             "('auth_failed','insufficient_funds','model_unavailable') ORDER BY started_at DESC LIMIT 1",
             (model_key,),
         )
         if blocking is not None:
-            later_ok = self.db.scalar("SELECT COUNT(*) FROM model_calls WHERE model_key = ? AND status = 'ok' AND started_at > ?",
-                                      (model_key, blocking["started_at"]))
+            later_ok = self.db.scalar(
+                "SELECT COUNT(*) FROM model_calls WHERE model_key = ? AND status = 'ok' AND started_at > ?",
+                (model_key, blocking["started_at"]),
+            )
             if not later_ok:
                 stat.last_blocking_class = blocking["error_class"]
                 stat.last_blocking_at = blocking["started_at"]
         lat = self.db.query(
             "SELECT latency_ms FROM model_calls WHERE model_key = ? AND status = 'ok' AND latency_ms IS NOT NULL "
-            "ORDER BY started_at DESC LIMIT 50", (model_key,),
+            "ORDER BY started_at DESC LIMIT 50",
+            (model_key,),
         )
         if lat:
             values = sorted(r["latency_ms"] for r in lat)

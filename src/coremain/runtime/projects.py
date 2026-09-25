@@ -18,7 +18,9 @@ from coremain.util.text import fts_query, one_line, query_terms
 
 def _git(root: Path, *args: str) -> str | None:
     try:
-        proc = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, timeout=10, check=False)
+        proc = subprocess.run(
+            ["git", "-C", str(root), *args], capture_output=True, text=True, timeout=10, check=False
+        )
     except (OSError, subprocess.TimeoutExpired):
         return None
     return proc.stdout.strip() if proc.returncode == 0 else None
@@ -45,7 +47,9 @@ class ProjectService:
                 (project_id, str(root), root.name, "git" if is_git else "none", remote, now, now),
             )
             row = conn.execute("SELECT * FROM projects WHERE root_path = ?", (str(root),)).fetchone()
-            self.events.emit("project.registered", project_id=row["id"], data={"root": str(root), "vcs": row["vcs"]})
+            self.events.emit(
+                "project.registered", project_id=row["id"], data={"root": str(root), "vcs": row["vcs"]}
+            )
         return Project.from_row(row)
 
     def get(self, project_id: str) -> Project:
@@ -63,11 +67,16 @@ class ProjectService:
                 "UPDATE projects SET trusted_config_hash = ?, trusted_at = ?, updated_at = ? WHERE id = ?",
                 (config_hash or "none", self.clock.now(), self.clock.now(), project_id),
             )
-            self.events.emit("project.trusted", project_id=project_id, actor="user", data={"config_hash": config_hash})
+            self.events.emit(
+                "project.trusted", project_id=project_id, actor="user", data={"config_hash": config_hash}
+            )
 
     def revoke_trust(self, project_id: str) -> None:
         with self.db.tx():
-            self.db.execute("UPDATE projects SET trusted_config_hash = NULL, trusted_at = NULL WHERE id = ?", (project_id,))
+            self.db.execute(
+                "UPDATE projects SET trusted_config_hash = NULL, trusted_at = NULL WHERE id = ?",
+                (project_id,),
+            )
             self.events.emit("project.untrusted", project_id=project_id, actor="user")
 
     @staticmethod
@@ -93,8 +102,15 @@ class SessionService:
         self.events = events
         self.clock = clock
 
-    def create(self, project_id: str, title: str = "New session", *, parent_session_id: str | None = None,
-               fork_checkpoint_id: str | None = None, intent: str | None = None) -> Session:
+    def create(
+        self,
+        project_id: str,
+        title: str = "New session",
+        *,
+        parent_session_id: str | None = None,
+        fork_checkpoint_id: str | None = None,
+        intent: str | None = None,
+    ) -> Session:
         now = self.clock.now()
         session_id = new_id("ses", now=now)
         with self.db.tx() as conn:
@@ -103,8 +119,12 @@ class SessionService:
                 "VALUES (?,?,?,?,?,?,?,?)",
                 (session_id, project_id, title, parent_session_id, fork_checkpoint_id, intent, now, now),
             )
-            self.events.emit("session.created", project_id=project_id, session_id=session_id,
-                             data={"title": title, "parent": parent_session_id})
+            self.events.emit(
+                "session.created",
+                project_id=project_id,
+                session_id=session_id,
+                data={"title": title, "parent": parent_session_id},
+            )
         return self.get(session_id)
 
     def get(self, session_id: str) -> Session:
@@ -132,28 +152,52 @@ class SessionService:
 
     def latest(self, project_id: str) -> Session | None:
         row = self.db.one(
-            "SELECT * FROM sessions WHERE project_id = ? AND status = 'active' ORDER BY updated_at DESC LIMIT 1", (project_id,)
+            "SELECT * FROM sessions WHERE project_id = ? AND status = 'active' ORDER BY updated_at DESC LIMIT 1",
+            (project_id,),
         )
         return Session.from_row(row) if row else None
 
     def list(self, project_id: str, *, include_archived: bool = False, limit: int = 100) -> list[Session]:
-        sql = "SELECT * FROM sessions WHERE project_id = ?" + ("" if include_archived else " AND status = 'active'")
-        return [Session.from_row(r) for r in self.db.query(sql + " ORDER BY updated_at DESC LIMIT ?", (project_id, limit))]
+        sql = "SELECT * FROM sessions WHERE project_id = ?" + (
+            "" if include_archived else " AND status = 'active'"
+        )
+        return [
+            Session.from_row(r)
+            for r in self.db.query(sql + " ORDER BY updated_at DESC LIMIT ?", (project_id, limit))
+        ]
 
     def rename(self, session_id: str, title: str) -> None:
-        self.db.execute("UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?", (title, self.clock.now(), session_id))
+        self.db.execute(
+            "UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?",
+            (title, self.clock.now(), session_id),
+        )
 
     def set_summary(self, session_id: str, summary: str) -> None:
-        self.db.execute("UPDATE sessions SET summary = ?, updated_at = ? WHERE id = ?", (summary, self.clock.now(), session_id))
+        self.db.execute(
+            "UPDATE sessions SET summary = ?, updated_at = ? WHERE id = ?",
+            (summary, self.clock.now(), session_id),
+        )
 
     def archive(self, session_id: str) -> None:
         session = self.get(session_id)
         with self.db.tx():
-            self.db.execute("UPDATE sessions SET status = 'archived', updated_at = ? WHERE id = ?", (self.clock.now(), session_id))
-            self.events.emit("session.archived", project_id=session.project_id, session_id=session_id, actor="user")
+            self.db.execute(
+                "UPDATE sessions SET status = 'archived', updated_at = ? WHERE id = ?",
+                (self.clock.now(), session_id),
+            )
+            self.events.emit(
+                "session.archived", project_id=session.project_id, session_id=session_id, actor="user"
+            )
 
-    def add_message(self, session_id: str, role: str, content: str, *, task_id: str | None = None,
-                    meta: dict[str, Any] | None = None) -> Message:
+    def add_message(
+        self,
+        session_id: str,
+        role: str,
+        content: str,
+        *,
+        task_id: str | None = None,
+        meta: dict[str, Any] | None = None,
+    ) -> Message:
         now = self.clock.now()
         message_id = new_id("msg", now=now)
         session = self.get(session_id)
@@ -164,16 +208,24 @@ class SessionService:
             )
             conn.execute("UPDATE sessions SET updated_at = ? WHERE id = ?", (now, session_id))
             if role == "user" and session.title == "New session":
-                conn.execute("UPDATE sessions SET title = ? WHERE id = ?", (one_line(content, 60), session_id))
-            self.events.emit("message.created", project_id=session.project_id, session_id=session_id, task_id=task_id,
-                             data={"message_id": message_id, "role": role, "preview": one_line(content, 200)})
+                conn.execute(
+                    "UPDATE sessions SET title = ? WHERE id = ?", (one_line(content, 60), session_id)
+                )
+            self.events.emit(
+                "message.created",
+                project_id=session.project_id,
+                session_id=session_id,
+                task_id=task_id,
+                data={"message_id": message_id, "role": role, "preview": one_line(content, 200)},
+            )
         row = self.db.one("SELECT * FROM messages WHERE id = ?", (message_id,))
         assert row is not None
         return Message.from_row(row)
 
     def messages(self, session_id: str, *, limit: int = 500) -> list[Message]:
         rows = self.db.query(
-            "SELECT * FROM (SELECT * FROM messages WHERE session_id = ? ORDER BY seq DESC LIMIT ?) ORDER BY seq", (session_id, limit)
+            "SELECT * FROM (SELECT * FROM messages WHERE session_id = ? ORDER BY seq DESC LIMIT ?) ORDER BY seq",
+            (session_id, limit),
         )
         return [Message.from_row(r) for r in rows]
 

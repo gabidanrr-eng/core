@@ -39,25 +39,42 @@ def _count(pattern: str, text: str) -> int:
 
 
 def parse_test_output(text: str) -> TestSummary | None:
-    if (re.search(r"=+ .*(passed|failed|error|no tests ran).* in [\d.]+s", text) or "short test summary" in text
-            or re.search(r"^\d+ (passed|failed|errors?)\b.* in [\d.]+s", text, re.M)):
-        s = TestSummary("pytest", _count(r"(\d+) passed", text), _count(r"(\d+) failed", text), _count(r"(\d+) errors?\b", text),
-                        _count(r"(\d+) skipped", text))
+    if (
+        re.search(r"=+ .*(passed|failed|error|no tests ran).* in [\d.]+s", text)
+        or "short test summary" in text
+        or re.search(r"^\d+ (passed|failed|errors?)\b.* in [\d.]+s", text, re.M)
+    ):
+        s = TestSummary(
+            "pytest",
+            _count(r"(\d+) passed", text),
+            _count(r"(\d+) failed", text),
+            _count(r"(\d+) errors?\b", text),
+            _count(r"(\d+) skipped", text),
+        )
         s.failures = re.findall(r"^FAILED (\S+)", text, re.M)[:20] or None
         return s
     m = re.search(r"Tests:\s+(?:(\d+) failed, )?(?:(\d+) skipped, )?(?:(\d+) passed, )?(\d+) total", text)
     if m:
-        return TestSummary("jest", int(m.group(3) or 0), int(m.group(1) or 0), 0, int(m.group(2) or 0), int(m.group(4)))
+        return TestSummary(
+            "jest", int(m.group(3) or 0), int(m.group(1) or 0), 0, int(m.group(2) or 0), int(m.group(4))
+        )
     m = re.search(r"Test Files .*\n\s+Tests\s+(?:(\d+) failed \| )?(\d+) passed", text)
     if m:
         return TestSummary("vitest", int(m.group(2)), int(m.group(1) or 0))
-    if re.search(r"^(ok|FAIL|---) ", text, re.M) and ("go test" in text or re.search(r"^ok\s+\S+\s+[\d.]+s", text, re.M)):
-        return TestSummary("go", len(re.findall(r"^--- PASS", text, re.M)) or len(re.findall(r"^ok\s", text, re.M)),
-                           len(re.findall(r"^--- FAIL", text, re.M)) or len(re.findall(r"^FAIL\s", text, re.M)))
+    if re.search(r"^(ok|FAIL|---) ", text, re.M) and (
+        "go test" in text or re.search(r"^ok\s+\S+\s+[\d.]+s", text, re.M)
+    ):
+        return TestSummary(
+            "go",
+            len(re.findall(r"^--- PASS", text, re.M)) or len(re.findall(r"^ok\s", text, re.M)),
+            len(re.findall(r"^--- FAIL", text, re.M)) or len(re.findall(r"^FAIL\s", text, re.M)),
+        )
     m = re.search(r"test result: (?:ok|FAILED)\. (\d+) passed; (\d+) failed; (\d+) ignored", text)
     if m:
         return TestSummary("cargo", int(m.group(1)), int(m.group(2)), 0, int(m.group(3)))
-    m = re.search(r"Ran (\d+) tests? in [\d.]+s\s+(OK|FAILED)(?: \((?:failures=(\d+))?(?:, )?(?:errors=(\d+))?)?", text)
+    m = re.search(
+        r"Ran (\d+) tests? in [\d.]+s\s+(OK|FAILED)(?: \((?:failures=(\d+))?(?:, )?(?:errors=(\d+))?)?", text
+    )
     if m:
         total = int(m.group(1))
         failed = int(m.group(3) or 0)

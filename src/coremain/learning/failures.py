@@ -34,23 +34,61 @@ class FailureRecorder:
         self.events = events
         self.clock = clock
 
-    def record(self, *, category: str, error_class: str, summary: str, project_id: str | None = None, task_id: str | None = None,
-               attempt_id: str | None = None, stage: str | None = None, context: dict[str, Any] | None = None) -> str:
+    def record(
+        self,
+        *,
+        category: str,
+        error_class: str,
+        summary: str,
+        project_id: str | None = None,
+        task_id: str | None = None,
+        attempt_id: str | None = None,
+        stage: str | None = None,
+        context: dict[str, Any] | None = None,
+    ) -> str:
         now = self.clock.now()
         failure_id = new_id("fail", now=now)
         signature = failure_signature(category, error_class, summary)
         self.db.execute(
             "INSERT INTO failures(id, project_id, task_id, attempt_id, stage, category, error_class, signature, summary, context_json, created_at) "
             "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-            (failure_id, project_id, task_id, attempt_id, stage, category, error_class, signature, summary[:2000], dumps(context or {}), now),
+            (
+                failure_id,
+                project_id,
+                task_id,
+                attempt_id,
+                stage,
+                category,
+                error_class,
+                signature,
+                summary[:2000],
+                dumps(context or {}),
+                now,
+            ),
         )
-        recurrences = int(self.db.scalar("SELECT COUNT(*) FROM failures WHERE signature = ?", (signature,)) or 0)
-        self.events.emit("failure.recorded", project_id=project_id, task_id=task_id, attempt_id=attempt_id, level="warning",
-                         data={"failure_id": failure_id, "category": category, "error_class": error_class, "signature": signature,
-                               "recurrences": recurrences, "summary": summary[:300]})
+        recurrences = int(
+            self.db.scalar("SELECT COUNT(*) FROM failures WHERE signature = ?", (signature,)) or 0
+        )
+        self.events.emit(
+            "failure.recorded",
+            project_id=project_id,
+            task_id=task_id,
+            attempt_id=attempt_id,
+            level="warning",
+            data={
+                "failure_id": failure_id,
+                "category": category,
+                "error_class": error_class,
+                "signature": signature,
+                "recurrences": recurrences,
+                "summary": summary[:300],
+            },
+        )
         return failure_id
 
-    def resolve_for_task(self, task_id: str, *, resolution: str, evidence_id: str | None, verified: bool) -> int:
+    def resolve_for_task(
+        self, task_id: str, *, resolution: str, evidence_id: str | None, verified: bool
+    ) -> int:
         now = self.clock.now()
         cur = self.db.execute(
             "UPDATE failures SET outcome = 'resolved', resolution = ?, resolution_evidence_id = ?, verified = ?, resolved_at = ?, "
@@ -61,4 +99,7 @@ class FailureRecorder:
         return cur.rowcount
 
     def for_task(self, task_id: str) -> list[dict[str, Any]]:
-        return [dict(r) for r in self.db.query("SELECT * FROM failures WHERE task_id = ? ORDER BY created_at", (task_id,))]
+        return [
+            dict(r)
+            for r in self.db.query("SELECT * FROM failures WHERE task_id = ? ORDER BY created_at", (task_id,))
+        ]

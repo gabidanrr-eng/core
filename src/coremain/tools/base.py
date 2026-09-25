@@ -170,9 +170,14 @@ class Tool:
 
     def policy_request(self, ctx: ToolContext, args: Any) -> PolicyRequest | None:
         return PolicyRequest(
-            capability=self.capability, target=self.target(args), workspace_root=ctx.workspace.path,
-            workspace_isolated=ctx.workspace.isolated, project_id=ctx.project_id, session_id=ctx.session_id,
-            task_id=ctx.task_id, tool=self.name,
+            capability=self.capability,
+            target=self.target(args),
+            workspace_root=ctx.workspace.path,
+            workspace_isolated=ctx.workspace.isolated,
+            project_id=ctx.project_id,
+            session_id=ctx.session_id,
+            task_id=ctx.task_id,
+            tool=self.name,
         )
 
     def effective_timeout(self, args: Any) -> float:

@@ -33,16 +33,47 @@ PROVIDER_CLASSES: dict[str, type[Provider]] = {
 # Endpoint presets for `core providers add`. These describe *providers* only; model ids are
 # never preset — they come from the user or from live discovery.
 PROVIDER_PRESETS: dict[str, dict[str, Any]] = {
-    "openai": {"kind": "openai_compatible", "base_url": "https://api.openai.com/v1", "api_key": "env:OPENAI_API_KEY"},
-    "anthropic": {"kind": "anthropic", "base_url": "https://api.anthropic.com", "api_key": "env:ANTHROPIC_API_KEY"},
-    "openrouter": {"kind": "openai_compatible", "base_url": "https://openrouter.ai/api/v1", "api_key": "env:OPENROUTER_API_KEY"},
-    "groq": {"kind": "openai_compatible", "base_url": "https://api.groq.com/openai/v1", "api_key": "env:GROQ_API_KEY"},
-    "deepseek": {"kind": "openai_compatible", "base_url": "https://api.deepseek.com/v1", "api_key": "env:DEEPSEEK_API_KEY"},
-    "mistral": {"kind": "openai_compatible", "base_url": "https://api.mistral.ai/v1", "api_key": "env:MISTRAL_API_KEY"},
+    "openai": {
+        "kind": "openai_compatible",
+        "base_url": "https://api.openai.com/v1",
+        "api_key": "env:OPENAI_API_KEY",
+    },
+    "anthropic": {
+        "kind": "anthropic",
+        "base_url": "https://api.anthropic.com",
+        "api_key": "env:ANTHROPIC_API_KEY",
+    },
+    "openrouter": {
+        "kind": "openai_compatible",
+        "base_url": "https://openrouter.ai/api/v1",
+        "api_key": "env:OPENROUTER_API_KEY",
+    },
+    "groq": {
+        "kind": "openai_compatible",
+        "base_url": "https://api.groq.com/openai/v1",
+        "api_key": "env:GROQ_API_KEY",
+    },
+    "deepseek": {
+        "kind": "openai_compatible",
+        "base_url": "https://api.deepseek.com/v1",
+        "api_key": "env:DEEPSEEK_API_KEY",
+    },
+    "mistral": {
+        "kind": "openai_compatible",
+        "base_url": "https://api.mistral.ai/v1",
+        "api_key": "env:MISTRAL_API_KEY",
+    },
     "xai": {"kind": "openai_compatible", "base_url": "https://api.x.ai/v1", "api_key": "env:XAI_API_KEY"},
-    "together": {"kind": "openai_compatible", "base_url": "https://api.together.xyz/v1", "api_key": "env:TOGETHER_API_KEY"},
-    "gemini": {"kind": "openai_compatible", "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
-               "api_key": "env:GEMINI_API_KEY"},
+    "together": {
+        "kind": "openai_compatible",
+        "base_url": "https://api.together.xyz/v1",
+        "api_key": "env:TOGETHER_API_KEY",
+    },
+    "gemini": {
+        "kind": "openai_compatible",
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "api_key": "env:GEMINI_API_KEY",
+    },
     "ollama": {"kind": "openai_compatible", "base_url": "http://localhost:11434/v1"},
     "lmstudio": {"kind": "openai_compatible", "base_url": "http://localhost:1234/v1"},
 }
@@ -65,13 +96,25 @@ class ModelProfile:
         return {"frontier": 0.9, "strong": 0.78, "standard": 0.62, "light": 0.45}[self.config.tier]
 
     def to_dict(self) -> dict[str, Any]:
-        return {"key": self.key, "ref": self.ref, "provider": self.provider_id, "model": self.model_id,
-                **self.config.model_dump(mode="json", exclude={"provider", "id"})}
+        return {
+            "key": self.key,
+            "ref": self.ref,
+            "provider": self.provider_id,
+            "model": self.model_id,
+            **self.config.model_dump(mode="json", exclude={"provider", "id"}),
+        }
 
 
 class ProviderRegistry:
-    def __init__(self, config: CoreConfig, store: CredentialStore, redactor: Redactor, *, env: Mapping[str, str] | None = None,
-                 transports: dict[str, httpx.AsyncBaseTransport] | None = None):
+    def __init__(
+        self,
+        config: CoreConfig,
+        store: CredentialStore,
+        redactor: Redactor,
+        *,
+        env: Mapping[str, str] | None = None,
+        transports: dict[str, httpx.AsyncBaseTransport] | None = None,
+    ):
         self.config = config
         self.store = store
         self.redactor = redactor
@@ -95,21 +138,31 @@ class ProviderRegistry:
             return self._providers[provider_id]
         cfg = self.config.providers.get(provider_id)
         if cfg is None:
-            raise ProviderError(f"provider '{provider_id}' is not configured", error_class=ProviderErrorClass.NOT_CONFIGURED,
-                                provider_id=provider_id)
+            raise ProviderError(
+                f"provider '{provider_id}' is not configured",
+                error_class=ProviderErrorClass.NOT_CONFIGURED,
+                provider_id=provider_id,
+            )
         if not cfg.enabled:
-            raise ProviderError(f"provider '{provider_id}' is disabled", error_class=ProviderErrorClass.NOT_CONFIGURED,
-                                provider_id=provider_id)
+            raise ProviderError(
+                f"provider '{provider_id}' is disabled",
+                error_class=ProviderErrorClass.NOT_CONFIGURED,
+                provider_id=provider_id,
+            )
         credential = None
         if cfg.api_key:
-            credential = resolve_credential(cfg.api_key, self.store, env=self.env, redactor=self.redactor).value
+            credential = resolve_credential(
+                cfg.api_key, self.store, env=self.env, redactor=self.redactor
+            ).value
         secret_headers: dict[str, str] = {}
         for header, ref in cfg.secret_headers.items():
             value = resolve_credential(ref, self.store, env=self.env, redactor=self.redactor).value
             if value:
                 secret_headers[header] = value
         cls = PROVIDER_CLASSES[cfg.kind]
-        provider = cls(provider_id, cfg, credential, secret_headers, transport=self._transports.get(provider_id))
+        provider = cls(
+            provider_id, cfg, credential, secret_headers, transport=self._transports.get(provider_id)
+        )
         self._providers[provider_id] = provider
         return provider
 
@@ -128,7 +181,9 @@ class ProviderRegistry:
                 return profile
         raise NotFoundError(
             f"model '{key_or_ref}' is not configured",
-            hint="Configured models: " + (", ".join(p.key for p in self.models()) or "none") + ". Add one with `core models add`.",
+            hint="Configured models: "
+            + (", ".join(p.key for p in self.models()) or "none")
+            + ". Add one with `core models add`.",
         )
 
     async def aclose(self) -> None:

@@ -75,7 +75,13 @@ class Requirement:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Requirement:
-        return cls(d["kind"], d.get("name", ""), d.get("description", ""), d.get("state_bound", True), d.get("required", True))
+        return cls(
+            d["kind"],
+            d.get("name", ""),
+            d.get("description", ""),
+            d.get("state_bound", True),
+            d.get("required", True),
+        )
 
 
 @dataclass
@@ -102,9 +108,27 @@ class Evidence:
 
     @classmethod
     def from_row(cls, r: sqlite3.Row) -> Evidence:
-        return cls(r["id"], r["project_id"], r["task_id"], r["attempt_id"], r["workspace_id"], r["kind"], r["status"], r["trust"],
-                   r["summary"], r["fingerprint"], r["diff_hash"], r["command"], r["exit_code"], r["tool"], r["provider"],
-                   r["model"], r["artifact_id"], loads(r["data_json"], {}), r["created_at"])
+        return cls(
+            r["id"],
+            r["project_id"],
+            r["task_id"],
+            r["attempt_id"],
+            r["workspace_id"],
+            r["kind"],
+            r["status"],
+            r["trust"],
+            r["summary"],
+            r["fingerprint"],
+            r["diff_hash"],
+            r["command"],
+            r["exit_code"],
+            r["tool"],
+            r["provider"],
+            r["model"],
+            r["artifact_id"],
+            loads(r["data_json"], {}),
+            r["created_at"],
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return dict(self.__dict__)
@@ -125,10 +149,21 @@ class GateContext:
 def evidence_level(satisfied_kinds: set[str]) -> str:
     if EvidenceKind.TESTS in satisfied_kinds:
         return "strong"
-    if satisfied_kinds & {EvidenceKind.BUILD, EvidenceKind.TYPECHECK, EvidenceKind.BROWSER, EvidenceKind.COMMAND}:
+    if satisfied_kinds & {
+        EvidenceKind.BUILD,
+        EvidenceKind.TYPECHECK,
+        EvidenceKind.BROWSER,
+        EvidenceKind.COMMAND,
+    }:
         return "moderate"
-    if satisfied_kinds & {EvidenceKind.SYNTAX, EvidenceKind.LINT, EvidenceKind.REVIEW, EvidenceKind.CITATIONS,
-                          EvidenceKind.WORKSPACE_UNCHANGED, EvidenceKind.DIFF}:
+    if satisfied_kinds & {
+        EvidenceKind.SYNTAX,
+        EvidenceKind.LINT,
+        EvidenceKind.REVIEW,
+        EvidenceKind.CITATIONS,
+        EvidenceKind.WORKSPACE_UNCHANGED,
+        EvidenceKind.DIFF,
+    }:
         return "weak"
     return "none"
 
@@ -171,19 +206,49 @@ class EvidenceEngine:
                 "INSERT INTO evidence(id, project_id, task_id, attempt_id, workspace_id, kind, status, trust, summary, fingerprint, "
                 "diff_hash, command, exit_code, tool, provider, model, artifact_id, data_json, created_at) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (evidence_id, project_id, task_id, attempt_id, workspace_id, kind, status, trust, summary[:2000], fingerprint,
-                 diff_hash, command, exit_code, tool, provider, model, artifact_id, dumps(data or {}), now),
+                (
+                    evidence_id,
+                    project_id,
+                    task_id,
+                    attempt_id,
+                    workspace_id,
+                    kind,
+                    status,
+                    trust,
+                    summary[:2000],
+                    fingerprint,
+                    diff_hash,
+                    command,
+                    exit_code,
+                    tool,
+                    provider,
+                    model,
+                    artifact_id,
+                    dumps(data or {}),
+                    now,
+                ),
             )
             self.events.emit(
-                "evidence.recorded", project_id=project_id, task_id=task_id, attempt_id=attempt_id,
+                "evidence.recorded",
+                project_id=project_id,
+                task_id=task_id,
+                attempt_id=attempt_id,
                 level="info" if status == "pass" else "warning",
-                data={"evidence_id": evidence_id, "kind": kind, "status": status, "trust": trust, "summary": summary[:300],
-                      "name": (data or {}).get("name")},
+                data={
+                    "evidence_id": evidence_id,
+                    "kind": kind,
+                    "status": status,
+                    "trust": trust,
+                    "summary": summary[:300],
+                    "name": (data or {}).get("name"),
+                },
             )
             row = conn.execute("SELECT * FROM evidence WHERE id = ?", (evidence_id,)).fetchone()
         return Evidence.from_row(row)
 
-    def for_task(self, task_id: str, *, attempt_id: str | None = None, kinds: tuple[str, ...] | None = None) -> list[Evidence]:
+    def for_task(
+        self, task_id: str, *, attempt_id: str | None = None, kinds: tuple[str, ...] | None = None
+    ) -> list[Evidence]:
         sql = "SELECT * FROM evidence WHERE task_id = ?"
         params: list[Any] = [task_id]
         if attempt_id:
@@ -209,10 +274,17 @@ class EvidenceEngine:
         satisfied_kinds: set[str] = set()
         for req in ctx.requirements:
             matches = [
-                e for e in evidence
-                if e.kind == req.kind and (not req.name or e.data.get("name") == req.name) and e.trust in ACCEPTED_TRUST
+                e
+                for e in evidence
+                if e.kind == req.kind
+                and (not req.name or e.data.get("name") == req.name)
+                and e.trust in ACCEPTED_TRUST
             ]
-            foreign = [e for e in matches if ctx.workspace_id is not None and e.workspace_id not in (None, ctx.workspace_id)]
+            foreign = [
+                e
+                for e in matches
+                if ctx.workspace_id is not None and e.workspace_id not in (None, ctx.workspace_id)
+            ]
             if foreign:
                 notes.append(f"{req.key}: ignored {len(foreign)} record(s) from another workspace")
             matches = [e for e in matches if e not in foreign]
@@ -232,7 +304,9 @@ class EvidenceEngine:
                     notes.append(f"{req.key}: optional evidence is stale")
                 continue
             latest = current[-1]
-            contradictory = req.state_bound and any(e.status == "fail" for e in current) and latest.status == "pass"
+            contradictory = (
+                req.state_bound and any(e.status == "fail" for e in current) and latest.status == "pass"
+            )
             if contradictory:
                 notes.append(f"{req.key}: contradictory results for the identical workspace state (flaky?)")
             if latest.status != "pass" or contradictory:
@@ -254,5 +328,9 @@ class EvidenceEngine:
             parts.append("failing " + ", ".join(failing))
         if stale:
             parts.append("stale " + ", ".join(stale))
-        summary = "; ".join(parts) if parts else (f"all {len(satisfied)} requirement(s) satisfied at level {level}" if passed else notes[-1])
+        summary = (
+            "; ".join(parts)
+            if parts
+            else (f"all {len(satisfied)} requirement(s) satisfied at level {level}" if passed else notes[-1])
+        )
         return GateResult(passed, summary, level, satisfied, missing, failing, stale, notes)

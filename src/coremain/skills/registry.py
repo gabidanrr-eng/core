@@ -77,10 +77,24 @@ class Skill:
         return estimate_tokens(self.body)
 
     def to_dict(self, *, include_body: bool = False) -> dict[str, Any]:
-        d = {"name": self.name, "description": self.description, "path": str(self.path), "source": self.source, "sha256": self.sha256,
-             "version": self.version, "trust": self.trust, "valid": self.valid, "problems": self.problems, "warnings": self.warnings,
-             "metadata": self.metadata, "resources": self.resources, "tokens": self.tokens, "provenance": self.provenance,
-             "license": self.frontmatter.get("license"), "allowed_tools": self.frontmatter.get("allowed-tools")}
+        d = {
+            "name": self.name,
+            "description": self.description,
+            "path": str(self.path),
+            "source": self.source,
+            "sha256": self.sha256,
+            "version": self.version,
+            "trust": self.trust,
+            "valid": self.valid,
+            "problems": self.problems,
+            "warnings": self.warnings,
+            "metadata": self.metadata,
+            "resources": self.resources,
+            "tokens": self.tokens,
+            "provenance": self.provenance,
+            "license": self.frontmatter.get("license"),
+            "allowed_tools": self.frontmatter.get("allowed-tools"),
+        }
         if include_body:
             d["body"] = self.body
         return d
@@ -95,7 +109,11 @@ class SkillSelection:
 
 def dir_hash(path: Path) -> str:
     h = hashlib.sha256()
-    for f in sorted(p for p in path.rglob("*") if p.is_file() and p.name != PROVENANCE_FILE and "__pycache__" not in p.parts):
+    for f in sorted(
+        p
+        for p in path.rglob("*")
+        if p.is_file() and p.name != PROVENANCE_FILE and "__pycache__" not in p.parts
+    ):
         h.update(f.relative_to(path).as_posix().encode())
         h.update(b"\0")
         h.update(hashlib.sha256(f.read_bytes()).digest())
@@ -148,8 +166,11 @@ def load_skill(path: Path, source: str) -> Skill:
         warnings.append("'compatibility' should be 1-500 characters")
     if estimate_tokens(body) > 6000:
         warnings.append("body is large (>6000 tokens); consider moving detail into references/")
-    resources_list = sorted(p.relative_to(path).as_posix() for p in path.rglob("*")
-                            if p.is_file() and p.name not in {"SKILL.md", PROVENANCE_FILE} and "__pycache__" not in p.parts)
+    resources_list = sorted(
+        p.relative_to(path).as_posix()
+        for p in path.rglob("*")
+        if p.is_file() and p.name not in {"SKILL.md", PROVENANCE_FILE} and "__pycache__" not in p.parts
+    )
     provenance: dict[str, Any] = {}
     prov_path = path / PROVENANCE_FILE
     if prov_path.exists():
@@ -157,8 +178,20 @@ def load_skill(path: Path, source: str) -> Skill:
             provenance = json.loads(prov_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             warnings.append("unreadable provenance file")
-    return Skill(name or path.name, description, path, source, body, front, dir_hash(path), metadata, problems, warnings,
-                 resources=resources_list, provenance=provenance)
+    return Skill(
+        name or path.name,
+        description,
+        path,
+        source,
+        body,
+        front,
+        dir_hash(path),
+        metadata,
+        problems,
+        warnings,
+        resources=resources_list,
+        provenance=provenance,
+    )
 
 
 def builtin_skills_dir() -> Path:
@@ -166,8 +199,14 @@ def builtin_skills_dir() -> Path:
 
 
 class SkillRegistry:
-    def __init__(self, db: Database | None, config: SkillsConfig, roots: list[tuple[str, Path]], clock: Clock,
-                 events: EventLog | None = None):
+    def __init__(
+        self,
+        db: Database | None,
+        config: SkillsConfig,
+        roots: list[tuple[str, Path]],
+        clock: Clock,
+        events: EventLog | None = None,
+    ):
         self.db = db
         self.config = config
         self.roots = roots
@@ -185,7 +224,9 @@ class SkillRegistry:
             for md in sorted(root.glob("*/SKILL.md")) + sorted(root.glob("*/*/SKILL.md")):
                 skill = load_skill(md.parent, source)
                 if skill.name in found and found[skill.name].path != skill.path:
-                    self.collisions.append(f"{skill.name}: {source} skill at {skill.path} overrides {found[skill.name].source} skill")
+                    self.collisions.append(
+                        f"{skill.name}: {source} skill at {skill.path} overrides {found[skill.name].source} skill"
+                    )
                     skill.warnings.append(f"overrides {found[skill.name].source} skill of the same name")
                 found[skill.name] = skill
         for skill in found.values():
@@ -193,7 +234,9 @@ class SkillRegistry:
         for skill in found.values():
             for other in skill.meta_list("core-conflicts"):
                 if other in found:
-                    skill.warnings.append(f"declares a conflict with '{other}' (both installed; never selected together)")
+                    skill.warnings.append(
+                        f"declares a conflict with '{other}' (both installed; never selected together)"
+                    )
         self._skills = found
         return found
 
@@ -202,7 +245,9 @@ class SkillRegistry:
             return "disabled"
         decision = None
         if self.db is not None:
-            row = self.db.one("SELECT decision FROM skill_trust WHERE name = ? AND sha256 = ?", (skill.name, skill.sha256))
+            row = self.db.one(
+                "SELECT decision FROM skill_trust WHERE name = ? AND sha256 = ?", (skill.name, skill.sha256)
+            )
             decision = row["decision"] if row else None
         if decision == "blocked":
             return "blocked"
@@ -210,7 +255,9 @@ class SkillRegistry:
             return "builtin"
         if decision == "trusted" or skill.source == "user":
             return "trusted"
-        if self.db is not None and self.db.one("SELECT 1 FROM skill_trust WHERE name = ? AND decision = 'trusted'", (skill.name,)):
+        if self.db is not None and self.db.one(
+            "SELECT 1 FROM skill_trust WHERE name = ? AND decision = 'trusted'", (skill.name,)
+        ):
             skill.warnings.append("content changed since it was trusted; re-run `core skills trust`")
         return "untrusted"
 
@@ -231,15 +278,28 @@ class SkillRegistry:
         if decision == "untrusted":
             self.db.execute("DELETE FROM skill_trust WHERE name = ?", (name,))
         else:
-            self.db.execute("INSERT OR REPLACE INTO skill_trust(name, sha256, decision, source, decided_at) VALUES (?,?,?,?,?)",
-                            (name, skill.sha256, decision, str(skill.path), self.clock.now()))
+            self.db.execute(
+                "INSERT OR REPLACE INTO skill_trust(name, sha256, decision, source, decided_at) VALUES (?,?,?,?,?)",
+                (name, skill.sha256, decision, str(skill.path), self.clock.now()),
+            )
         if self.events is not None:
-            self.events.emit("skill.trust", actor=actor, data={"skill": name, "decision": decision, "sha256": skill.sha256})
+            self.events.emit(
+                "skill.trust", actor=actor, data={"skill": name, "decision": decision, "sha256": skill.sha256}
+            )
         self.refresh()
         return self.get(name)
 
-    def select(self, *, text: str, task_kind: str, languages: list[str], frameworks: list[str], stage: str,
-               max_n: int | None = None, max_tokens: int | None = None) -> list[SkillSelection]:
+    def select(
+        self,
+        *,
+        text: str,
+        task_kind: str,
+        languages: list[str],
+        frameworks: list[str],
+        stage: str,
+        max_n: int | None = None,
+        max_tokens: int | None = None,
+    ) -> list[SkillSelection]:
         if not self.config.enabled:
             return []
         max_n = self.config.max_selected if max_n is None else max_n
@@ -250,7 +310,9 @@ class SkillRegistry:
         fws = {x.lower() for x in frameworks}
         candidates: list[SkillSelection] = []
         for skill in self.all():
-            if not skill.valid or not (skill.usable or (self.config.allow_untrusted and skill.trust == "untrusted")):
+            if not skill.valid or not (
+                skill.usable or (self.config.allow_untrusted and skill.trust == "untrusted")
+            ):
                 continue
             score = 0.0
             reasons: list[str] = []
@@ -288,7 +350,10 @@ class SkillRegistry:
             if len(chosen) >= max_n:
                 break
             conflicts = set(cand.skill.meta_list("core-conflicts"))
-            if any(c.skill.name in conflicts or cand.skill.name in set(c.skill.meta_list("core-conflicts")) for c in chosen):
+            if any(
+                c.skill.name in conflicts or cand.skill.name in set(c.skill.meta_list("core-conflicts"))
+                for c in chosen
+            ):
                 continue
             if used + cand.skill.tokens > max_tokens:
                 continue
@@ -310,23 +375,36 @@ class SkillRegistry:
     def fingerprint(self) -> str:
         return sha256_hex("|".join(f"{s.name}:{s.sha256}:{s.trust}" for s in self.all()))
 
-    def import_skills(self, source: str, dest_root: Path, *, subpath: str | None = None, names: list[str] | None = None) -> list[Skill]:
+    def import_skills(
+        self, source: str, dest_root: Path, *, subpath: str | None = None, names: list[str] | None = None
+    ) -> list[Skill]:
         """Import skills from a local directory or git URL. Imported skills are untrusted."""
         with tempfile.TemporaryDirectory(prefix="core-skill-import-") as tmp:
             commit = None
             if re.match(r"^(https://|git@|ssh://)", source):
-                proc = subprocess.run(["git", "clone", "--depth", "1", "--quiet", source, f"{tmp}/repo"], capture_output=True, text=True,
-                                      timeout=180, check=False)
+                proc = subprocess.run(
+                    ["git", "clone", "--depth", "1", "--quiet", source, f"{tmp}/repo"],
+                    capture_output=True,
+                    text=True,
+                    timeout=180,
+                    check=False,
+                )
                 if proc.returncode != 0:
                     raise CoreError(f"git clone failed: {proc.stderr.strip()[:300]}")
                 base = Path(tmp) / "repo"
-                commit = subprocess.run(["git", "-C", str(base), "rev-parse", "HEAD"], capture_output=True, text=True, check=False).stdout.strip()
+                commit = subprocess.run(
+                    ["git", "-C", str(base), "rev-parse", "HEAD"], capture_output=True, text=True, check=False
+                ).stdout.strip()
             else:
                 base = Path(source).expanduser().resolve()
                 if not base.is_dir():
                     raise NotFoundError(f"skill source {source} is not a directory")
             search_root = base / subpath if subpath else base
-            skill_dirs = [search_root] if (search_root / "SKILL.md").exists() else [p.parent for p in sorted(search_root.rglob("SKILL.md"))]
+            skill_dirs = (
+                [search_root]
+                if (search_root / "SKILL.md").exists()
+                else [p.parent for p in sorted(search_root.rglob("SKILL.md"))]
+            )
             imported: list[Skill] = []
             slug = re.sub(r"[^a-z0-9]+", "-", source.lower()).strip("-")[-60:] or "local"
             for d in skill_dirs:
@@ -339,10 +417,19 @@ class SkillRegistry:
                 if target.exists():
                     shutil.rmtree(target)
                 shutil.copytree(d, target, ignore=shutil.ignore_patterns(".git", "__pycache__"))
-                (target / PROVENANCE_FILE).write_text(json.dumps({
-                    "source": source, "subpath": str(d.relative_to(base)) if d != base else ".", "commit": commit,
-                    "imported_at": self.clock.now(), "license": skill.frontmatter.get("license"),
-                }, indent=2), encoding="utf-8")
+                (target / PROVENANCE_FILE).write_text(
+                    json.dumps(
+                        {
+                            "source": source,
+                            "subpath": str(d.relative_to(base)) if d != base else ".",
+                            "commit": commit,
+                            "imported_at": self.clock.now(),
+                            "license": skill.frontmatter.get("license"),
+                        },
+                        indent=2,
+                    ),
+                    encoding="utf-8",
+                )
                 imported.append(load_skill(target, "imported"))
         self.refresh()
         return imported

@@ -69,7 +69,9 @@ def _parse_unified(lines: list[str]) -> list[FilePatch]:
                 fp = FilePatch(_strip_prefix(new_path), "add")
             else:
                 fp = FilePatch(_strip_prefix(new_path), "update")
-            while i < len(lines) and not (lines[i].startswith("--- ") and i + 1 < len(lines) and lines[i + 1].startswith("+++ ")):
+            while i < len(lines) and not (
+                lines[i].startswith("--- ") and i + 1 < len(lines) and lines[i + 1].startswith("+++ ")
+            ):
                 m = _HUNK.match(lines[i])
                 if not m:
                     i += 1
@@ -78,8 +80,12 @@ def _parse_unified(lines: list[str]) -> list[FilePatch]:
                 i += 1
                 old: list[str] = []
                 new: list[str] = []
-                while i < len(lines) and not lines[i].startswith("@@") and not (
-                    lines[i].startswith("--- ") and i + 1 < len(lines) and lines[i + 1].startswith("+++ ")
+                while (
+                    i < len(lines)
+                    and not lines[i].startswith("@@")
+                    and not (
+                        lines[i].startswith("--- ") and i + 1 < len(lines) and lines[i + 1].startswith("+++ ")
+                    )
                 ):
                     body = lines[i]
                     if body.startswith("\\"):
@@ -93,7 +99,7 @@ def _parse_unified(lines: list[str]) -> list[FilePatch]:
                         new.append(body[1:])
                     elif body == "":
                         # A bare empty line is a blank context line only if more hunk content follows.
-                        rest = lines[i + 1:i + 2]
+                        rest = lines[i + 1 : i + 2]
                         if rest and rest[0][:1] in {" ", "+", "-"}:
                             old.append("")
                             new.append("")
@@ -106,7 +112,9 @@ def _parse_unified(lines: list[str]) -> list[FilePatch]:
             continue
         i += 1
     if not patches:
-        raise PatchError("no file sections found; expected a unified diff (---/+++/@@) or a *** Begin Patch envelope")
+        raise PatchError(
+            "no file sections found; expected a unified diff (---/+++/@@) or a *** Begin Patch envelope"
+        )
     return patches
 
 
@@ -165,7 +173,7 @@ def _find(lines: list[str], block: list[str], *, loose: bool) -> list[int]:
     first = target[0]
     hits = []
     for idx in range(len(lines) - len(block) + 1):
-        if norm(lines[idx]) == first and [norm(x) for x in lines[idx: idx + len(block)]] == target:
+        if norm(lines[idx]) == first and [norm(x) for x in lines[idx : idx + len(block)]] == target:
             hits.append(idx)
     return hits
 
@@ -183,7 +191,9 @@ def apply_hunks(original: str, hunks: list[Hunk], *, path: str = "file") -> str:
             if hunk.anchor:
                 anchor_hits = [i for i, line in enumerate(lines) if line.strip() == hunk.anchor.strip()]
                 if len(anchor_hits) != 1:
-                    raise PatchError(f"{path}: hunk {n} insertion anchor '{hunk.anchor}' matched {len(anchor_hits)} lines")
+                    raise PatchError(
+                        f"{path}: hunk {n} insertion anchor '{hunk.anchor}' matched {len(anchor_hits)} lines"
+                    )
                 pos = anchor_hits[0] + 1
             elif hunk.hint_line is not None:
                 pos = min(len(lines), max(0, hunk.hint_line - 1 + offset))
@@ -195,12 +205,18 @@ def apply_hunks(original: str, hunks: list[Hunk], *, path: str = "file") -> str:
         hits = _find(lines, hunk.old, loose=False) or _find(lines, hunk.old, loose=True)
         if not hits:
             preview = "\n".join(hunk.old[:6])
-            raise PatchError(f"{path}: hunk {n} context not found. Expected lines:\n{preview}\n"
-                             "Re-read the file and regenerate the patch against its current content.")
+            raise PatchError(
+                f"{path}: hunk {n} context not found. Expected lines:\n{preview}\n"
+                "Re-read the file and regenerate the patch against its current content."
+            )
         if len(hits) > 1:
             chosen = None
             if hunk.anchor:
-                anchored = [h for h in hits if any(line.strip() == hunk.anchor.strip() for line in lines[max(0, h - 40):h])]
+                anchored = [
+                    h
+                    for h in hits
+                    if any(line.strip() == hunk.anchor.strip() for line in lines[max(0, h - 40) : h])
+                ]
                 if len(anchored) == 1:
                     chosen = anchored[0]
             if chosen is None and hunk.hint_line is not None:
@@ -209,10 +225,12 @@ def apply_hunks(original: str, hunks: list[Hunk], *, path: str = "file") -> str:
                 if len(ranked) == 1 or abs(ranked[0] - target) < abs(ranked[1] - target):
                     chosen = ranked[0]
             if chosen is None:
-                raise PatchError(f"{path}: hunk {n} matches {len(hits)} locations; include more context to make it unique")
+                raise PatchError(
+                    f"{path}: hunk {n} matches {len(hits)} locations; include more context to make it unique"
+                )
             hits = [chosen]
         start = hits[0]
-        lines[start:start + len(hunk.old)] = hunk.new
+        lines[start : start + len(hunk.old)] = hunk.new
         offset += len(hunk.new) - len(hunk.old)
     text = newline.join(lines)
     if had_final_newline and lines:

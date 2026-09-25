@@ -47,8 +47,14 @@ class ScriptedProvider(Provider):
     kind = "scripted"
     requires_credential = False
 
-    def __init__(self, provider_id: str, config: ProviderConfig, credential: str | None, secret_headers: dict[str, str] | None = None,
-                 **kw: Any):
+    def __init__(
+        self,
+        provider_id: str,
+        config: ProviderConfig,
+        credential: str | None,
+        secret_headers: dict[str, str] | None = None,
+        **kw: Any,
+    ):
         super().__init__(provider_id, config, credential, secret_headers, **kw)
         self._script: dict[str, Any] | None = None
 
@@ -58,8 +64,11 @@ class ScriptedProvider(Provider):
             try:
                 self._script = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError) as exc:
-                raise ProviderError(f"{self.id}: cannot load script {path}: {exc}", error_class=ProviderErrorClass.NOT_CONFIGURED,
-                                    provider_id=self.id) from exc
+                raise ProviderError(
+                    f"{self.id}: cannot load script {path}: {exc}",
+                    error_class=ProviderErrorClass.NOT_CONFIGURED,
+                    provider_id=self.id,
+                ) from exc
         return self._script
 
     def _turn(self, req: ChatRequest) -> dict[str, Any]:
@@ -74,7 +83,9 @@ class ScriptedProvider(Provider):
         default = script.get("default")
         if isinstance(default, dict):
             return dict(default)
-        return {"text": f"[scripted provider '{script.get('name', self.id)}' has no turn {index} for role {role}]"}
+        return {
+            "text": f"[scripted provider '{script.get('name', self.id)}' has no turn {index} for role {role}]"
+        }
 
     @staticmethod
     def _substitute(value: Any, last_output: str) -> Any:
@@ -96,12 +107,15 @@ class ScriptedProvider(Provider):
         if isinstance(err, dict):
             raise ProviderError(
                 f"{self.id}: scripted {err.get('class', 'server_error')}: {err.get('message', 'injected failure')}",
-                error_class=ProviderErrorClass(err.get("class", "server_error")), provider_id=self.id, model_id=req.model,
-                status_code=err.get("status"), retry_after=err.get("retry_after"),
+                error_class=ProviderErrorClass(err.get("class", "server_error")),
+                provider_id=self.id,
+                model_id=req.model,
+                status_code=err.get("status"),
+                retry_after=err.get("retry_after"),
             )
         text = str(turn.get("text", ""))
         for i in range(0, len(text), 40):
-            yield TextDelta(text[i:i + 40])
+            yield TextDelta(text[i : i + 40])
         calls = turn.get("tool_calls") or []
         for i, call in enumerate(calls):
             yield ToolCallStart(i, call.get("id") or f"script_{i}", call["name"])
@@ -109,9 +123,16 @@ class ScriptedProvider(Provider):
             yield ToolCallDelta(i, raw)
         usage = turn.get("usage") or {}
         prompt_chars = sum(len(m.content) for m in req.messages)
-        yield UsageUpdate(Usage(input_tokens=int(usage.get("input_tokens", estimate_tokens("x" * prompt_chars))),
-                                output_tokens=int(usage.get("output_tokens", estimate_tokens(text) + 8 * len(calls)))))
+        yield UsageUpdate(
+            Usage(
+                input_tokens=int(usage.get("input_tokens", estimate_tokens("x" * prompt_chars))),
+                output_tokens=int(usage.get("output_tokens", estimate_tokens(text) + 8 * len(calls))),
+            )
+        )
         yield Finish("tool_calls" if calls else "stop")
 
     async def list_models(self) -> list[DiscoveredModel]:
-        return [DiscoveredModel(id=str(m), display_name=f"scripted:{m}") for m in self.script().get("models", ["scripted"])]
+        return [
+            DiscoveredModel(id=str(m), display_name=f"scripted:{m}")
+            for m in self.script().get("models", ["scripted"])
+        ]

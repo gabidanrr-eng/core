@@ -32,9 +32,22 @@ class ReviewStore:
         self.events = events
         self.clock = clock
 
-    def record(self, *, project_id: str, task_id: str, attempt_id: str | None, strategy: str, reviewer: str, verdict: str,
-               summary: str, findings: list[Finding], diff_hash: str, fingerprint: str | None, workspace_root: Path | None,
-               independence: str | None = None) -> ReviewRecord:
+    def record(
+        self,
+        *,
+        project_id: str,
+        task_id: str,
+        attempt_id: str | None,
+        strategy: str,
+        reviewer: str,
+        verdict: str,
+        summary: str,
+        findings: list[Finding],
+        diff_hash: str,
+        fingerprint: str | None,
+        workspace_root: Path | None,
+        independence: str | None = None,
+    ) -> ReviewRecord:
         now = self.clock.now()
         review_id = new_id("rev", now=now)
         stored: list[dict[str, Any]] = []
@@ -42,7 +55,19 @@ class ReviewStore:
             conn.execute(
                 "INSERT INTO reviews(id, task_id, attempt_id, strategy, reviewer, independence, diff_hash, fingerprint, verdict, summary, created_at) "
                 "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                (review_id, task_id, attempt_id, strategy, reviewer, independence, diff_hash, fingerprint, verdict, summary[:2000], now),
+                (
+                    review_id,
+                    task_id,
+                    attempt_id,
+                    strategy,
+                    reviewer,
+                    independence,
+                    diff_hash,
+                    fingerprint,
+                    verdict,
+                    summary[:2000],
+                    now,
+                ),
             )
             for f in findings:
                 valid = None
@@ -51,23 +76,56 @@ class ReviewStore:
                     valid = 1 if target.is_file() else 0
                     if valid and f.line:
                         try:
-                            valid = 1 if f.line <= len(target.read_text(encoding="utf-8", errors="replace").splitlines()) + 1 else 0
+                            valid = (
+                                1
+                                if f.line
+                                <= len(target.read_text(encoding="utf-8", errors="replace").splitlines()) + 1
+                                else 0
+                            )
                         except OSError:
                             valid = 0
                 finding_id = new_id("fnd", now=now)
                 conn.execute(
                     "INSERT INTO findings(id, task_id, attempt_id, review_id, severity, category, title, file, line, rationale, evidence, "
                     "remediation, status, diff_hash, location_valid, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    (finding_id, task_id, attempt_id, review_id, f.severity, f.category, f.title[:300], f.file, f.line, f.rationale[:2000],
-                     f.evidence[:2000], f.remediation[:1000], "open", diff_hash, valid, now),
+                    (
+                        finding_id,
+                        task_id,
+                        attempt_id,
+                        review_id,
+                        f.severity,
+                        f.category,
+                        f.title[:300],
+                        f.file,
+                        f.line,
+                        f.rationale[:2000],
+                        f.evidence[:2000],
+                        f.remediation[:1000],
+                        "open",
+                        diff_hash,
+                        valid,
+                        now,
+                    ),
                 )
                 stored.append({**f.to_dict(), "id": finding_id, "location_valid": valid})
             self.events.emit(
-                "review.completed", project_id=project_id, task_id=task_id, attempt_id=attempt_id,
+                "review.completed",
+                project_id=project_id,
+                task_id=task_id,
+                attempt_id=attempt_id,
                 level="info" if verdict == "approve" else "warning",
-                data={"review_id": review_id, "strategy": strategy, "reviewer": reviewer, "verdict": verdict, "summary": summary[:300],
-                      "findings": [{"severity": s["severity"], "title": s["title"], "file": s["file"], "line": s["line"]} for s in stored][:30],
-                      "independence": independence},
+                data={
+                    "review_id": review_id,
+                    "strategy": strategy,
+                    "reviewer": reviewer,
+                    "verdict": verdict,
+                    "summary": summary[:300],
+                    "findings": [
+                        {"severity": s["severity"], "title": s["title"], "file": s["file"], "line": s["line"]}
+                        for s in stored
+                    ][:30],
+                    "independence": independence,
+                },
             )
         return ReviewRecord(review_id, strategy, reviewer, verdict, summary, stored, independence)
 
@@ -84,15 +142,27 @@ class ReviewStore:
         if diff_hash:
             sql += " AND diff_hash = ?"
             params.append(diff_hash)
-        return [dict(r) for r in self.db.query(sql + " ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 "
-                                                      "WHEN 'low' THEN 3 ELSE 4 END, created_at", params)]
+        return [
+            dict(r)
+            for r in self.db.query(
+                sql
+                + " ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 "
+                "WHEN 'low' THEN 3 ELSE 4 END, created_at",
+                params,
+            )
+        ]
 
     def reviews(self, task_id: str) -> list[dict[str, Any]]:
-        return [dict(r) for r in self.db.query("SELECT * FROM reviews WHERE task_id = ? ORDER BY created_at", (task_id,))]
+        return [
+            dict(r)
+            for r in self.db.query("SELECT * FROM reviews WHERE task_id = ? ORDER BY created_at", (task_id,))
+        ]
 
     def dismiss(self, finding_id: str, reason: str) -> None:
-        self.db.execute("UPDATE findings SET status = 'dismissed', resolution = ?, resolved_at = ? WHERE id = ?",
-                        (f"dismissed by user: {reason}", self.clock.now(), finding_id))
+        self.db.execute(
+            "UPDATE findings SET status = 'dismissed', resolution = ?, resolved_at = ? WHERE id = ?",
+            (f"dismissed by user: {reason}", self.clock.now(), finding_id),
+        )
 
 
 def verdict_for(findings: list[dict[str, Any]], model_verdicts: list[str]) -> str:
