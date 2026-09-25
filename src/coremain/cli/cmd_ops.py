@@ -413,7 +413,9 @@ async def learn_list(ctx: CLIContext, rt: Any) -> int:
 @click.option("--suite", default="smoke", show_default=True)
 @click.option("--scenario", "scenario_ids", multiple=True, help="Validate on specific scenarios only.")
 @runtime_command(require_project=False)
-async def learn_validate(ctx: CLIContext, rt: Any, heuristic_id: str, suite: str, scenario_ids: tuple[str, ...]) -> int:
+async def learn_validate(
+    ctx: CLIContext, rt: Any, heuristic_id: str, suite: str, scenario_ids: tuple[str, ...]
+) -> int:
     from coremain.learning.analysis import validate_heuristic
 
     result = await validate_heuristic(rt, heuristic_id, suite=suite, scenario_ids=list(scenario_ids) or None)
@@ -694,7 +696,7 @@ async def logs(
 # ============================================================================ diagnostics / maintenance
 @click.command()
 @click.option("--live", is_flag=True, help="Also contact providers and MCP servers (no tokens consumed).")
-@runtime_command(require_project=False)
+@runtime_command(require_project=False, detect_project=True)
 async def doctor(ctx: CLIContext, rt: Any, live: bool) -> int:
     """Check database, migrations, config, providers, MCP, skills, index, workspaces, processes and caches."""
     from coremain.diagnostics.doctor import run_doctor

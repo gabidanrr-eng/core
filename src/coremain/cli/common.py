@@ -33,12 +33,29 @@ class CLIContext:
             return None
         return (self.project or find_project_root()).resolve()
 
+    def detected_project(self) -> Path | None:
+        """The explicit project, or the nearest ancestor with ``.core``/``.git``; never a bare cwd."""
+        if self.no_project:
+            return None
+        if self.project:
+            return self.project.resolve()
+        root = find_project_root()
+        return root if (root / ".git").exists() or (root / ".core").is_dir() else None
+
     def open_runtime(
-        self, *, mode: str = "cli", require_project: bool = True, auto_recover: bool = True
+        self,
+        *,
+        mode: str = "cli",
+        require_project: bool = True,
+        auto_recover: bool = True,
+        detect_project: bool = False,
     ) -> Any:
         from coremain.runtime.app import CoreRuntime
 
-        root = self.project_root() if require_project or self.project else None
+        if require_project or self.project:
+            root = self.project_root()
+        else:
+            root = self.detected_project() if detect_project else None
         return CoreRuntime.open(
             project_root=root,
             paths=resolve_core_paths(self.env),
@@ -71,7 +88,7 @@ def run_async(ctx: CLIContext, coro: Awaitable[T]) -> T:
 
 
 def runtime_command(
-    *, require_project: bool = True, mode: str = "cli"
+    *, require_project: bool = True, mode: str = "cli", detect_project: bool = False
 ) -> Callable[[Callable[..., Awaitable[Any]]], Callable[..., Any]]:
     """Decorator: open a CoreRuntime, call ``async fn(rt, **kwargs)``, close it, map errors to exit codes."""
 
@@ -79,7 +96,9 @@ def runtime_command(
         @click.pass_obj
         def wrapper(ctx: CLIContext, **kwargs: Any) -> Any:
             async def body() -> Any:
-                rt = ctx.open_runtime(mode=mode, require_project=require_project)
+                rt = ctx.open_runtime(
+                    mode=mode, require_project=require_project, detect_project=detect_project
+                )
                 try:
                     return await fn(ctx, rt, **kwargs)
                 finally:
