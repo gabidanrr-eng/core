@@ -1,0 +1,116 @@
+[project]
+name = "core-main"
+dynamic = ["version"]
+description = "Core Main: a local-first terminal AI engineering environment with durable execution, evidence-based verification and provider-agnostic multi-model orchestration."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "Core Main contributors" }]
+keywords = ["ai", "coding-agent", "terminal", "tui", "llm", "developer-tools"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development",
+]
+dependencies = [
+  "textual>=8.2,<9",
+  "rich>=14",
+  "httpx>=0.28,<1",
+  "pydantic>=2.11,<3",
+  "click>=8.2,<9",
+  "pyyaml>=6.0,<7",
+  "tomli-w>=1.2,<2",
+]
+
+[project.optional-dependencies]
+browser = ["playwright>=1.49,<2"]
+
+[project.scripts]
+core = "coremain.cli.main:main"
+coremain = "coremain.cli.main:main"
+
+[dependency-groups]
+dev = [
+  "pytest>=9.0",
+  "pytest-asyncio>=1.2",
+  "pytest-timeout>=2.4",
+  "ruff>=0.16",
+  "mypy>=2.0",
+  "types-pyyaml",
+  "playwright>=1.49,<2",
+]
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/coremain/version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/coremain"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/coremain", "tests", "docs", "README.md", "pyproject.toml", "uv.lock", "Makefile"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "ASYNC", "S", "BLE"]
+ignore = [
+  "S101",   # assert is used in tests and for internal invariants
+  "S603",   # subprocess calls are governed by the policy engine
+  "S607",   # partial executable paths are resolved through PATH deliberately
+  "S404",
+  "S311",   # random is not used for security purposes where flagged
+  "RUF012",
+  "SIM105",
+  "SIM108",
+  "B008",
+  "E501",
+  "RUF001",
+  "RUF002",
+  "RUF003",
+  "ASYNC109",
+  "S608",     # SQL is always parameterized; only placeholder lists and fixed fragments are interpolated
+  "ASYNC240", # cheap stat() calls on the event loop are acceptable; heavy IO runs in threads
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S", "BLE", "ASYNC", "B011"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.mypy]
+python_version = "3.11"
+packages = ["coremain"]
+mypy_path = "src"
+check_untyped_defs = true
+disallow_incomplete_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_unreachable = false
+strict_equality = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+timeout = 180
+addopts = "-ra --strict-markers"
+markers = [
+  "network: requires outbound network access",
+  "browser: requires playwright and a chromium executable",
+  "live: requires real provider credentials",
+  "slow: long running end-to-end tests",
+]
+filterwarnings = ["ignore::DeprecationWarning:textual.*"]

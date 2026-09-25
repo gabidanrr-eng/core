@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Core Main local state inside projects (durable state lives in the user data dir)
+.core/config.local.toml
+.core/cache/
+.core/tmp/
+
+# Editors / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Secrets must never be committed
+.env
+.env.*
+!.env.example
+*.pem
+*.key
