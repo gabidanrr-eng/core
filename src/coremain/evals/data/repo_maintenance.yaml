@@ -1,0 +1,98 @@
+# Repository maintenance: release housekeeping confined to exactly the files that should change.
+- id: maintenance-release-housekeeping
+  family: repo-maintenance
+  title: Bump the version consistently and extend .gitignore without touching anything else
+  request: >-
+    Release housekeeping: bump the package version from 1.3.2 to 1.4.0 in pyproject.toml and in
+    acme_utils/__init__.py (they must stay in sync), and make git ignore local build and tooling
+    output: .venv/, dist/, build/, *.egg-info/ and .pytest_cache/. Touch nothing else.
+  mode: direct
+  test_command: "{python} -m pytest -q -p no:cacheprovider"
+  files:
+    .gitignore: |
+      __pycache__/
+      *.pyc
+    pyproject.toml: |
+      [project]
+      name = "acme-utils"
+      version = "1.3.2"
+      description = "Small helpers shared by Acme services"
+      requires-python = ">=3.10"
+
+      [tool.pytest.ini_options]
+      pythonpath = ["."]
+    acme_utils/__init__.py: |
+      """Acme shared helpers."""
+
+      __version__ = "1.3.2"
+    acme_utils/text.py: |
+      def truncate(text: str, width: int, suffix: str = "…") -> str:
+          return text if len(text) <= width else text[: max(width - len(suffix), 0)] + suffix
+    tests/test_text.py: |
+      from acme_utils.text import truncate
+
+
+      def test_truncate():
+          assert truncate("hello world", 8) == "hello w…"
+          assert truncate("short", 8) == "short"
+    tests/test_version.py: |
+      import tomllib
+      from pathlib import Path
+
+      import acme_utils
+
+
+      def test_package_version_matches_pyproject():
+          pyproject = Path(__file__).resolve().parent.parent / "pyproject.toml"
+          assert acme_utils.__version__ == tomllib.loads(pyproject.read_text())["project"]["version"]
+    CHANGELOG.md: |
+      # Changelog
+
+      ## 1.4.0 (unreleased)
+
+      - Add `truncate()` with a configurable suffix.
+
+      ## 1.3.2
+
+      - Fix a crash on empty input.
+  script:
+    implementer:
+      - [{read_file: {path: pyproject.toml}}, {read_file: {path: acme_utils/__init__.py}}, {read_file: {path: .gitignore}}, {read_file: {path: tests/test_version.py}}]
+      - - {edit_file: {path: pyproject.toml, old_string: 'version = "1.3.2"', new_string: 'version = "1.4.0"'}}
+        - {edit_file: {path: acme_utils/__init__.py, old_string: '__version__ = "1.3.2"', new_string: '__version__ = "1.4.0"'}}
+        - edit_file:
+            path: .gitignore
+            old_string: "*.pyc\n"
+            new_string: "*.pyc\n\n# local environments, build output and tool caches\n.venv/\ndist/\nbuild/\n*.egg-info/\n.pytest_cache/\n"
+      - run_tests: {}
+      - git_diff: {}
+      - submit_result:
+          summary: "Bumped the version to 1.4.0 in pyproject.toml and acme_utils/__init__.py (version test passes) and added .venv/, dist/, build/, *.egg-info/ and .pytest_cache/ to .gitignore. No other files changed."
+          files_changed: [pyproject.toml, acme_utils/__init__.py, .gitignore]
+          confidence: high
+    reviewer:
+      - git_diff: {}
+      - submit_review: {verdict: approve, summary: "Version bumped consistently in both places; ignore rules are scoped to build and tool output."}
+  checks:
+    - status: completed
+    - min_level: strong
+    - command:
+        run: |
+          {python} - <<'EOF'
+          import re, tomllib
+          version = tomllib.load(open("pyproject.toml", "rb"))["project"]["version"]
+          init = re.search(r"__version__\s*=\s*['\"]([^'\"]+)", open("acme_utils/__init__.py").read())
+          assert version == "1.4.0" and init and init.group(1) == "1.4.0", (version, init and init.group(1))
+          print("version 1.4.0")
+          EOF
+        expect_output: "version 1.4.0"
+    - command: >-
+        git check-ignore -q .venv/bin/python && git check-ignore -q dist/acme_utils-1.4.0.tar.gz &&
+        git check-ignore -q build/lib/acme_utils/__init__.py && git check-ignore -q acme_utils.egg-info/PKG-INFO &&
+        git check-ignore -q .pytest_cache/v/cache/lastfailed && git check-ignore -q acme_utils/__pycache__/text.cpython-312.pyc
+    # Sources must stay tracked: check-ignore exits 1 when none of the paths is ignored.
+    - command:
+        run: "git check-ignore acme_utils/text.py tests/test_version.py pyproject.toml CHANGELOG.md"
+        expect_exit: 1
+    - command: "{python} -m pytest -q -p no:cacheprovider"
+    - changed_only: [.gitignore, pyproject.toml, acme_utils/__init__.py]

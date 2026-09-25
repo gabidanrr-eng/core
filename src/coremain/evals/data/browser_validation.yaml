@@ -1,0 +1,216 @@
+# Browser validation: a static page whose markup and client-side validation must be correct.
+# Checks here are structural (stdlib HTML parsing); real-browser checks can build on the same fixture.
+- id: browser-signup-validation
+  family: browser-validation
+  title: Make a static signup form accessible and validate the email client-side
+  request: >-
+    The newsletter signup page in site/ accepts anything, including an empty email. In
+    site/index.html give the email field a visible <label for="email">, make it type="email" and
+    required, point its aria-describedby at a new <p id="email-error" role="alert" hidden> message,
+    and update site/app.js so submitting an invalid address shows that message instead of the thank-you
+    text (and hides it again once the address is valid). tests/test_signup_page.py checks the markup.
+  mode: direct
+  requires: [browser]
+  test_command: "{python} -m pytest -q -p no:cacheprovider"
+  files:
+    site/index.html: |
+      <!doctype html>
+      <html lang="en">
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Acme newsletter</title>
+        <link rel="stylesheet" href="styles.css">
+        <script src="app.js" defer></script>
+      </head>
+      <body>
+        <main>
+          <h1>Join the Acme newsletter</h1>
+          <form id="signup" novalidate>
+            <input id="email" name="email" placeholder="Email">
+            <button type="submit">Subscribe</button>
+          </form>
+          <p id="status" aria-live="polite"></p>
+        </main>
+      </body>
+      </html>
+    site/app.js: |
+      document.addEventListener("DOMContentLoaded", () => {
+        const form = document.getElementById("signup");
+        const status = document.getElementById("status");
+
+        form.addEventListener("submit", (event) => {
+          event.preventDefault();
+          status.textContent = "Thanks for subscribing!";
+        });
+      });
+    site/styles.css: |
+      body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 32rem; }
+      form { display: grid; gap: 0.5rem; }
+      [role="alert"] { color: #b00020; }
+    tests/test_signup_page.py: |
+      from html.parser import HTMLParser
+      from pathlib import Path
+
+      SITE = Path(__file__).resolve().parent.parent / "site"
+      VOID = {"input", "meta", "link", "br", "img", "hr"}
+
+
+      class Collector(HTMLParser):
+          def __init__(self):
+              super().__init__()
+              self.elements = []
+              self._open = []
+
+          def handle_starttag(self, tag, attrs):
+              element = {"tag": tag, "attrs": dict(attrs), "text": ""}
+              self.elements.append(element)
+              if tag not in VOID:
+                  self._open.append(element)
+
+          def handle_endtag(self, tag):
+              while self._open and self._open.pop()["tag"] != tag:
+                  pass
+
+          def handle_data(self, data):
+              for element in self._open:
+                  element["text"] += data
+
+
+      def page():
+          collector = Collector()
+          collector.feed((SITE / "index.html").read_text(encoding="utf-8"))
+          return collector.elements
+
+
+      def by_id(elements, element_id):
+          return next((e for e in elements if e["attrs"].get("id") == element_id), None)
+
+
+      def test_form_and_script_are_present():
+          elements = page()
+          assert by_id(elements, "signup")["tag"] == "form"
+          assert any(e["tag"] == "script" and e["attrs"].get("src") == "app.js" for e in elements)
+
+
+      def test_email_field_is_a_required_email_input():
+          email = by_id(page(), "email")
+          assert email["tag"] == "input"
+          assert email["attrs"].get("type") == "email"
+          assert "required" in email["attrs"]
+
+
+      def test_email_field_has_a_visible_label():
+          labels = [e for e in page() if e["tag"] == "label" and e["attrs"].get("for") == "email"]
+          assert labels and labels[0]["text"].strip()
+
+
+      def test_error_message_is_announced_and_initially_hidden():
+          error = by_id(page(), "email-error")
+          assert error is not None
+          assert error["attrs"].get("role") == "alert"
+          assert "hidden" in error["attrs"]
+          assert error["text"].strip()
+
+
+      def test_email_field_is_described_by_the_error():
+          email = by_id(page(), "email")
+          assert "email-error" in (email["attrs"].get("aria-describedby") or "").split()
+    pyproject.toml: |
+      [project]
+      name = "acme-newsletter-site"
+      version = "0.1.0"
+
+      [tool.pytest.ini_options]
+      pythonpath = ["."]
+  script:
+    implementer:
+      - [{read_file: {path: site/index.html}}, {read_file: {path: site/app.js}}, {read_file: {path: tests/test_signup_page.py}}]
+      - run_tests: {}
+      - edit_file:
+          path: site/index.html
+          old_string: '<input id="email" name="email" placeholder="Email">'
+          new_string: |-
+            <label for="email">Email address</label>
+                  <input id="email" name="email" type="email" required autocomplete="email"
+                         placeholder="name@example.com" aria-describedby="email-error">
+                  <p id="email-error" role="alert" hidden>Enter a valid email address, like name@example.com.</p>
+      - write_file:
+          path: site/app.js
+          content: |
+            document.addEventListener("DOMContentLoaded", () => {
+              const form = document.getElementById("signup");
+              const email = document.getElementById("email");
+              const error = document.getElementById("email-error");
+              const status = document.getElementById("status");
+
+              form.addEventListener("submit", (event) => {
+                event.preventDefault();
+                // The form is novalidate so the page controls the message; the input's own
+                // constraints (type=email, required) still decide validity.
+                if (!email.checkValidity()) {
+                  error.hidden = false;
+                  email.setAttribute("aria-invalid", "true");
+                  status.textContent = "";
+                  email.focus();
+                  return;
+                }
+                error.hidden = true;
+                email.removeAttribute("aria-invalid");
+                status.textContent = "Thanks for subscribing!";
+              });
+            });
+      - run_tests: {}
+      - submit_result:
+          summary: "The email input now has a visible label, type=email, required and aria-describedby pointing at a hidden role=alert message; app.js shows that message (and marks the field invalid) when the address fails the input's constraints, and hides it on a valid submit. Markup tests pass; behaviour in a real browser was not exercised."
+          files_changed: [site/index.html, site/app.js]
+          remaining_issues: ["client-side behaviour not exercised in a real browser"]
+          confidence: medium
+    reviewer:
+      - [{read_file: {path: site/index.html}}, {read_file: {path: site/app.js}}]
+      - submit_review: {verdict: approve, summary: "Markup is accessible (label, describedby, role=alert) and the script toggles the message based on the input's own validity."}
+  checks:
+    - status: completed
+    - min_level: strong
+    - command: "{python} -m pytest -q -p no:cacheprovider"
+    - command:
+        run: |
+          {python} - <<'EOF'
+          from html.parser import HTMLParser
+          from pathlib import Path
+
+          class Page(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.by_id, self.labels, self.open = {}, [], []
+              def handle_starttag(self, tag, attrs):
+                  node = {"tag": tag, "attrs": dict(attrs), "text": ""}
+                  if node["attrs"].get("id"):
+                      self.by_id[node["attrs"]["id"]] = node
+                  if tag == "label":
+                      self.labels.append(node)
+                  if tag not in {"input", "meta", "link", "br", "img", "hr"}:
+                      self.open.append(node)
+              def handle_endtag(self, tag):
+                  while self.open and self.open.pop()["tag"] != tag:
+                      pass
+              def handle_data(self, data):
+                  for node in self.open:
+                      node["text"] += data
+
+          page = Page()
+          page.feed(Path("site/index.html").read_text(encoding="utf-8"))
+          email, error = page.by_id.get("email"), page.by_id.get("email-error")
+          assert email and email["tag"] == "input", "no #email input"
+          assert email["attrs"].get("type") == "email" and "required" in email["attrs"], email
+          assert "email-error" in (email["attrs"].get("aria-describedby") or "").split(), email
+          assert any(l["attrs"].get("for") == "email" and l["text"].strip() for l in page.labels), "no visible label"
+          assert error and error["attrs"].get("role") == "alert" and "hidden" in error["attrs"], error
+          assert error["text"].strip(), "error message is empty"
+          assert page.by_id.get("signup", {}).get("tag") == "form", "form missing"
+          print("markup ok")
+          EOF
+        expect_output: "markup ok"
+    - file_contains: {path: site/app.js, text: "email-error"}
+    - file_contains: {path: site/app.js, text: "Thanks for subscribing!"}
+    - changed_only: [site/*, tests/*.py]

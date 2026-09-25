@@ -1,0 +1,386 @@
+# Multi-file feature: thread a new option through config → client → CLI. Two scripted models make
+# independent proposals, a synthesis picks one (recorded as a proposed ADR), then implementation.
+- id: feature-units-option-collaborative
+  family: multi-file-feature
+  title: Thread a validated "units" option through settings, HTTP client and CLI (collaborative planning)
+  request: >-
+    Add a `units` option ("metric" or "imperial", default "metric") to the weather tool. Settings
+    reads it from WEATHER_UNITS and rejects other values with ConfigError, WeatherClient sends it as
+    a `units` query parameter, and the CLI gets a --units flag that overrides the environment without
+    losing other settings. The CLI output should show the unit, e.g. "Oslo: -3°C snow". Add tests for
+    each layer.
+  mode: collaborative
+  models: 2
+  test_command: "{python} -m pytest -q -p no:cacheprovider"
+  files:
+    weather/__init__.py: ""
+    weather/config.py: |
+      """Settings for the weather client, loaded from a mapping such as os.environ."""
+
+      from __future__ import annotations
+
+      from collections.abc import Mapping
+      from dataclasses import dataclass
+
+
+      class ConfigError(ValueError):
+          pass
+
+
+      @dataclass(frozen=True)
+      class Settings:
+          base_url: str = "https://api.weather.example"
+          timeout_s: float = 5.0
+
+          @classmethod
+          def from_env(cls, env: Mapping[str, str]) -> Settings:
+              base_url = env.get("WEATHER_BASE_URL", cls.base_url).rstrip("/")
+              try:
+                  timeout_s = float(env.get("WEATHER_TIMEOUT_S", cls.timeout_s))
+              except ValueError as exc:
+                  raise ConfigError("WEATHER_TIMEOUT_S must be a number") from exc
+              if timeout_s <= 0:
+                  raise ConfigError("WEATHER_TIMEOUT_S must be positive")
+              return cls(base_url=base_url, timeout_s=timeout_s)
+    weather/client.py: |
+      """Forecast API client. The transport is injected so tests never touch the network."""
+
+      from __future__ import annotations
+
+      import json
+      from collections.abc import Callable
+      from urllib.parse import urlencode
+
+      from weather.config import Settings
+
+      Transport = Callable[[str, float], bytes]  # (url, timeout_s) -> response body
+
+
+      class WeatherClient:
+          def __init__(self, settings: Settings, transport: Transport) -> None:
+              self.settings = settings
+              self.transport = transport
+
+          def forecast_url(self, city: str) -> str:
+              return f"{self.settings.base_url}/v1/forecast?" + urlencode({"city": city})
+
+          def forecast(self, city: str) -> dict:
+              return json.loads(self.transport(self.forecast_url(city), self.settings.timeout_s))
+    weather/cli.py: |
+      """Command line entry point: weather --city Paris"""
+
+      from __future__ import annotations
+
+      import argparse
+      import os
+      import sys
+      import urllib.request
+      from collections.abc import Mapping, Sequence
+
+      from weather.client import Transport, WeatherClient
+      from weather.config import ConfigError, Settings
+
+
+      def urllib_transport(url: str, timeout_s: float) -> bytes:
+          with urllib.request.urlopen(url, timeout=timeout_s) as response:
+              return response.read()
+
+
+      def main(
+          argv: Sequence[str] | None = None,
+          *,
+          env: Mapping[str, str] | None = None,
+          transport: Transport = urllib_transport,
+      ) -> int:
+          parser = argparse.ArgumentParser(prog="weather")
+          parser.add_argument("--city", required=True)
+          parser.add_argument("--timeout", type=float, help="request timeout in seconds (overrides WEATHER_TIMEOUT_S)")
+          args = parser.parse_args(argv)
+          try:
+              settings = Settings.from_env(os.environ if env is None else env)
+          except ConfigError as exc:
+              print(f"error: {exc}", file=sys.stderr)
+              return 2
+          if args.timeout is not None:
+              settings = Settings(base_url=settings.base_url, timeout_s=args.timeout)
+          data = WeatherClient(settings, transport).forecast(args.city)
+          print(f"{data['city']}: {data['temperature']}° {data['summary']}")
+          return 0
+    tests/test_config.py: |
+      import pytest
+
+      from weather.config import ConfigError, Settings
+
+
+      def test_defaults():
+          settings = Settings.from_env({})
+          assert settings.base_url == "https://api.weather.example" and settings.timeout_s == 5.0
+
+
+      def test_env_overrides_and_trailing_slash():
+          settings = Settings.from_env({"WEATHER_BASE_URL": "http://localhost:9000/", "WEATHER_TIMEOUT_S": "2.5"})
+          assert settings.base_url == "http://localhost:9000" and settings.timeout_s == 2.5
+
+
+      def test_invalid_timeout_is_rejected():
+          with pytest.raises(ConfigError):
+              Settings.from_env({"WEATHER_TIMEOUT_S": "soon"})
+    tests/test_client.py: |
+      import json
+      from urllib.parse import parse_qs, urlparse
+
+      from weather.client import WeatherClient
+      from weather.config import Settings
+
+
+      def test_forecast_uses_settings_and_transport():
+          calls = []
+
+          def transport(url, timeout_s):
+              calls.append((url, timeout_s))
+              return json.dumps({"city": "Paris", "temperature": 21, "summary": "sunny"}).encode()
+
+          client = WeatherClient(Settings(base_url="http://w.test", timeout_s=3.0), transport)
+          assert client.forecast("Paris")["temperature"] == 21
+          url, timeout_s = calls[0]
+          assert urlparse(url).path == "/v1/forecast"
+          assert parse_qs(urlparse(url).query)["city"] == ["Paris"]
+          assert timeout_s == 3.0
+    tests/test_cli.py: |
+      import json
+
+      from weather.cli import main
+
+
+      def fake_transport(seen):
+          def transport(url, timeout_s):
+              seen.append((url, timeout_s))
+              return json.dumps({"city": "Oslo", "temperature": -3, "summary": "snow"}).encode()
+
+          return transport
+
+
+      def test_cli_prints_forecast(capsys):
+          assert main(["--city", "Oslo"], env={}, transport=fake_transport([])) == 0
+          assert capsys.readouterr().out.strip() == "Oslo: -3° snow"
+
+
+      def test_timeout_flag_overrides_env():
+          seen = []
+          assert main(["--city", "Oslo", "--timeout", "1.5"], env={"WEATHER_TIMEOUT_S": "9"}, transport=fake_transport(seen)) == 0
+          assert seen[0][1] == 1.5
+
+
+      def test_bad_config_exits_with_2(capsys):
+          assert main(["--city", "Oslo"], env={"WEATHER_TIMEOUT_S": "-1"}, transport=fake_transport([])) == 2
+          assert "WEATHER_TIMEOUT_S" in capsys.readouterr().err
+    pyproject.toml: |
+      [project]
+      name = "weather-cli"
+      version = "0.6.0"
+
+      [tool.pytest.ini_options]
+      pythonpath = ["."]
+  script:
+    planner@propose_0:
+      - [{read_file: {path: weather/config.py}}, {read_file: {path: weather/client.py}}, {read_file: {path: weather/cli.py}}]
+      - submit_plan:
+          approach: "Make units a validated Settings field (default metric, loaded from WEATHER_UNITS, checked in __post_init__ so every construction path is validated); WeatherClient adds settings.units to the query string; the CLI adds --units with choices and applies overrides with dataclasses.replace so no setting is dropped."
+          steps:
+            - {title: "Settings.units + validation", files: [weather/config.py, tests/test_config.py]}
+            - {title: "units query parameter", files: [weather/client.py, tests/test_client.py]}
+            - {title: "--units flag, replace()-based overrides, unit symbol in output", files: [weather/cli.py, tests/test_cli.py]}
+          risks: ["The CLI currently rebuilds Settings for --timeout, which would silently drop units"]
+          test_strategy: "Unit tests per layer plus a CLI test combining --timeout with WEATHER_UNITS=imperial"
+    planner@propose_1:
+      - [{read_file: {path: weather/client.py}}, {read_file: {path: weather/cli.py}}]
+      - submit_plan:
+          approach: "Leave Settings unchanged; add a units argument to WeatherClient.forecast(city, units) and have the CLI read WEATHER_UNITS or --units itself."
+          steps:
+            - {title: "forecast(city, units) parameter", files: [weather/client.py]}
+            - {title: "CLI reads WEATHER_UNITS / --units", files: [weather/cli.py]}
+          risks: ["Environment parsing and validation would be duplicated outside Settings"]
+    planner@synthesize:
+      - submit_plan:
+          approach: "Adopt proposal 1: units belongs in Settings so every entry point shares one default and one validation rule; proposal 2 duplicates environment parsing in the CLI and leaves the client unvalidated. Fix the CLI override to use dataclasses.replace so --timeout no longer drops fields."
+          steps:
+            - {title: "Settings.units validated in __post_init__, read from WEATHER_UNITS", files: [weather/config.py]}
+            - {title: "WeatherClient sends units", files: [weather/client.py]}
+            - {title: "CLI --units flag, replace()-based overrides, °C/°F output", files: [weather/cli.py]}
+            - {title: "Tests for each layer", files: [tests/test_config.py, tests/test_client.py, tests/test_cli.py]}
+          risks: ["Changing the output format requires updating the existing CLI output test"]
+          test_strategy: "Run the full suite; add config, client and CLI tests including the --timeout + units combination"
+          decisions:
+            - {title: "units lives in Settings", decision: "Validate and default units in Settings; the CLI only overrides it", alternatives: ["per-call units argument on forecast()"], rationale: "single source of validation for every entry point"}
+    implementer:
+      - [{read_file: {path: weather/config.py}}, {read_file: {path: weather/client.py}}, {read_file: {path: weather/cli.py}}, {read_file: {path: tests/test_config.py}}, {read_file: {path: tests/test_client.py}}, {read_file: {path: tests/test_cli.py}}]
+      - - edit_file:
+            path: weather/config.py
+            old_string: |-
+              class ConfigError(ValueError):
+                  pass
+            new_string: |-
+              UNITS = ("metric", "imperial")
+
+
+              class ConfigError(ValueError):
+                  pass
+        - edit_file:
+            path: weather/config.py
+            old_string: |-
+              timeout_s: float = 5.0
+
+                  @classmethod
+            new_string: |-
+              timeout_s: float = 5.0
+                  units: str = "metric"
+
+                  def __post_init__(self) -> None:
+                      if self.units not in UNITS:
+                          raise ConfigError(f"units must be one of {', '.join(UNITS)}, got {self.units!r}")
+
+                  @classmethod
+        - edit_file:
+            path: weather/config.py
+            old_string: "return cls(base_url=base_url, timeout_s=timeout_s)"
+            new_string: |-
+              units = env.get("WEATHER_UNITS", cls.units).strip().lower()
+                      return cls(base_url=base_url, timeout_s=timeout_s, units=units)
+        - edit_file:
+            path: weather/client.py
+            old_string: 'urlencode({"city": city})'
+            new_string: 'urlencode({"city": city, "units": self.settings.units})'
+      - - edit_file:
+            path: weather/cli.py
+            old_string: "import argparse\n"
+            new_string: "import argparse\nimport dataclasses\n"
+        - edit_file:
+            path: weather/cli.py
+            old_string: "from weather.config import ConfigError, Settings"
+            new_string: "from weather.config import UNITS, ConfigError, Settings"
+        - edit_file:
+            path: weather/cli.py
+            old_string: |-
+              args = parser.parse_args(argv)
+            new_string: |-
+              parser.add_argument("--units", choices=UNITS, help="metric (°C) or imperial (°F); overrides WEATHER_UNITS")
+                  args = parser.parse_args(argv)
+        - edit_file:
+            path: weather/cli.py
+            old_string: |-
+              if args.timeout is not None:
+                      settings = Settings(base_url=settings.base_url, timeout_s=args.timeout)
+                  data = WeatherClient(settings, transport).forecast(args.city)
+                  print(f"{data['city']}: {data['temperature']}° {data['summary']}")
+            new_string: |-
+              overrides = {"timeout_s": args.timeout, "units": args.units}
+                  # replace() keeps every field that is not overridden and re-runs validation.
+                  settings = dataclasses.replace(settings, **{k: v for k, v in overrides.items() if v is not None})
+                  data = WeatherClient(settings, transport).forecast(args.city)
+                  symbol = "°F" if settings.units == "imperial" else "°C"
+                  print(f"{data['city']}: {data['temperature']}{symbol} {data['summary']}")
+      - - edit_file:
+            path: tests/test_config.py
+            old_string: 'Settings.from_env({"WEATHER_TIMEOUT_S": "soon"})'
+            new_string: |-
+              Settings.from_env({"WEATHER_TIMEOUT_S": "soon"})
+
+
+              def test_units_default_and_env():
+                  assert Settings.from_env({}).units == "metric"
+                  assert Settings.from_env({"WEATHER_UNITS": "Imperial"}).units == "imperial"
+
+
+              def test_invalid_units_are_rejected():
+                  with pytest.raises(ConfigError):
+                      Settings.from_env({"WEATHER_UNITS": "kelvin"})
+        - edit_file:
+            path: tests/test_client.py
+            old_string: "assert timeout_s == 3.0"
+            new_string: |-
+              assert timeout_s == 3.0
+                  assert parse_qs(urlparse(url).query)["units"] == ["metric"]
+
+
+              def test_units_are_sent_as_query_parameter():
+                  seen = []
+                  client = WeatherClient(Settings(units="imperial"), lambda url, t: seen.append(url) or b"{}")
+                  client.forecast("Oslo")
+                  assert parse_qs(urlparse(seen[0]).query)["units"] == ["imperial"]
+        - edit_file:
+            path: tests/test_cli.py
+            old_string: 'assert capsys.readouterr().out.strip() == "Oslo: -3° snow"'
+            new_string: 'assert capsys.readouterr().out.strip() == "Oslo: -3°C snow"'
+        - edit_file:
+            path: tests/test_cli.py
+            old_string: 'assert "WEATHER_TIMEOUT_S" in capsys.readouterr().err'
+            new_string: |-
+              assert "WEATHER_TIMEOUT_S" in capsys.readouterr().err
+
+
+              def test_units_flag_overrides_env_and_changes_symbol(capsys):
+                  seen = []
+                  assert main(["--city", "Oslo", "--units", "imperial"], env={"WEATHER_UNITS": "metric"}, transport=fake_transport(seen)) == 0
+                  assert "units=imperial" in seen[0][0]
+                  assert capsys.readouterr().out.strip() == "Oslo: -3°F snow"
+
+
+              def test_timeout_flag_keeps_units_from_env():
+                  seen = []
+                  assert main(["--city", "Oslo", "--timeout", "2"], env={"WEATHER_UNITS": "imperial"}, transport=fake_transport(seen)) == 0
+                  assert "units=imperial" in seen[0][0] and seen[0][1] == 2.0
+      - run_tests: {}
+      - submit_result:
+          summary: "Added Settings.units (validated in __post_init__, read from WEATHER_UNITS), the units query parameter in WeatherClient, and a --units CLI flag; CLI overrides now use dataclasses.replace so --timeout keeps units. Output shows °C/°F (existing output test updated for the requested format). New tests cover each layer; the suite passes."
+          files_changed: [weather/config.py, weather/client.py, weather/cli.py, tests/test_config.py, tests/test_client.py, tests/test_cli.py]
+          tests_added_or_changed: [tests/test_config.py, tests/test_client.py, tests/test_cli.py]
+          confidence: high
+    reviewer:
+      - [{read_file: {path: weather/cli.py}}, {read_file: {path: weather/config.py}}]
+      - submit_review: {verdict: approve, summary: "units is validated once in Settings, sent by the client and overridable from the CLI without dropping other settings; each layer is tested."}
+  checks:
+    - status: completed
+    - min_level: strong
+    - command: "{python} -m pytest -q -p no:cacheprovider"
+    - command:
+        run: |
+          {python} - <<'EOF'
+          import contextlib, io, json
+          from urllib.parse import parse_qs, urlparse
+          from weather.cli import main
+          from weather.config import ConfigError, Settings
+          seen = []
+          def transport(url, timeout_s):
+              seen.append((url, timeout_s))
+              return json.dumps({"city": "Oslo", "temperature": 27, "summary": "clear"}).encode()
+          def units_sent():
+              return parse_qs(urlparse(seen[-1][0]).query).get("units")
+          assert Settings.from_env({}).units == "metric"
+          assert Settings.from_env({"WEATHER_UNITS": "imperial"}).units == "imperial"
+          try:
+              Settings.from_env({"WEATHER_UNITS": "kelvin"})
+          except ConfigError:
+              pass
+          else:
+              raise AssertionError("invalid units accepted")
+          out = io.StringIO()
+          with contextlib.redirect_stdout(out):
+              assert main(["--city", "Oslo", "--timeout", "1.5"], env={"WEATHER_UNITS": "imperial"}, transport=transport) == 0
+          assert units_sent() == ["imperial"] and seen[-1][1] == 1.5, seen[-1]
+          assert "27°F" in out.getvalue(), out.getvalue()
+          with contextlib.redirect_stdout(io.StringIO()):
+              assert main(["--city", "Oslo", "--units", "metric"], env={"WEATHER_UNITS": "imperial"}, transport=transport) == 0
+          assert units_sent() == ["metric"]
+          with contextlib.redirect_stderr(io.StringIO()):
+              assert main(["--city", "Oslo"], env={"WEATHER_UNITS": "kelvin"}, transport=transport) == 2
+          print("units threaded ok")
+          EOF
+        expect_output: "units threaded ok"
+    # The added tests must exercise the new behaviour: they fail against the original modules.
+    - command:
+        run: |
+          tmp=$(mktemp -d) && cp -R . "$tmp/repo" && cd "$tmp/repo" && git checkout -q HEAD -- weather || exit 2
+          if {python} -m pytest -q -p no:cacheprovider >/dev/null 2>&1; then echo "tests pass without the feature"; exit 1; fi
+          echo "tests exercise the feature"
+        expect_output: "tests exercise the feature"
+    - changed_only: [weather/*.py, tests/*.py]

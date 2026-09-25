@@ -1,0 +1,170 @@
+# Automation helpers: retry with exponential backoff (debugged iteratively, one hypothesis at a time).
+- id: automation-retry-backoff
+  family: automation
+  title: Debug a retry helper that swallows the final error and does not back off exponentially
+  request: >-
+    retry() in automation/retry.py never re-raises: after the final attempt it sleeps again and
+    returns None, so failed deployments look successful. Make it re-raise the last exception after
+    `attempts` tries (without the extra sleep) and back off exponentially, capped at max_delay,
+    as its docstring promises.
+  test_command: "{python} -m pytest -q -p no:cacheprovider"
+  files:
+    automation/__init__.py: ""
+    automation/retry.py: |
+      """Retry helper for flaky automation steps (HTTP calls, file locks, remote shells)."""
+
+      from __future__ import annotations
+
+      import time
+      from collections.abc import Callable
+      from typing import TypeVar
+
+      T = TypeVar("T")
+
+
+      def retry(
+          fn: Callable[[], T],
+          *,
+          attempts: int = 3,
+          base_delay: float = 0.5,
+          factor: float = 2.0,
+          max_delay: float = 30.0,
+          retry_on: tuple[type[BaseException], ...] = (Exception,),
+          sleep: Callable[[float], None] = time.sleep,
+      ) -> T:
+          """Call ``fn`` up to ``attempts`` times with exponential backoff between tries.
+
+          The delay starts at ``base_delay`` and is multiplied by ``factor`` after every failed
+          attempt, never exceeding ``max_delay``. The last exception is re-raised when every attempt
+          fails; exceptions not listed in ``retry_on`` propagate immediately.
+          """
+          if attempts < 1:
+              raise ValueError("attempts must be >= 1")
+          delay = base_delay
+          for attempt in range(attempts):
+              try:
+                  return fn()
+              except retry_on:
+                  if attempt == attempts:
+                      raise
+                  sleep(delay)
+                  delay = min(base_delay * factor, max_delay)
+    automation/deploy.py: |
+      """Deployment step runner used by the release pipeline."""
+
+      from automation.retry import retry
+
+
+      def deploy(push, *, attempts: int = 3, sleep=None) -> str:
+          kwargs = {"attempts": attempts}
+          if sleep is not None:
+              kwargs["sleep"] = sleep
+          return retry(push, retry_on=(ConnectionError, TimeoutError), **kwargs)
+    tests/test_retry.py: |
+      import pytest
+
+      from automation.deploy import deploy
+      from automation.retry import retry
+
+
+      class Flaky:
+          def __init__(self, failures, exc=ConnectionError):
+              self.failures, self.exc, self.calls = failures, exc, 0
+
+          def __call__(self):
+              self.calls += 1
+              if self.calls <= self.failures:
+                  raise self.exc(f"failure {self.calls}")
+              return "ok"
+
+
+      def test_first_success_does_not_sleep():
+          delays = []
+          assert retry(Flaky(0), sleep=delays.append) == "ok"
+          assert delays == []
+
+
+      def test_retries_until_success():
+          fn = Flaky(2)
+          assert retry(fn, attempts=3, sleep=lambda s: None) == "ok"
+          assert fn.calls == 3
+
+
+      def test_reraises_last_error_after_final_attempt():
+          delays, fn = [], Flaky(10)
+          with pytest.raises(ConnectionError, match="failure 3"):
+              retry(fn, attempts=3, sleep=delays.append)
+          assert fn.calls == 3
+          assert len(delays) == 2
+
+
+      def test_backoff_grows_exponentially_and_is_capped():
+          delays = []
+          with pytest.raises(ConnectionError):
+              retry(Flaky(10), attempts=6, base_delay=1.0, factor=3.0, max_delay=20.0, sleep=delays.append)
+          assert delays == [1.0, 3.0, 9.0, 20.0, 20.0]
+
+
+      def test_non_retryable_errors_propagate_immediately():
+          fn = Flaky(1, exc=KeyError)
+          with pytest.raises(KeyError):
+              retry(fn, retry_on=(ConnectionError,), sleep=lambda s: None)
+          assert fn.calls == 1
+
+
+      def test_failed_deploy_is_not_reported_as_success():
+          with pytest.raises(TimeoutError):
+              deploy(Flaky(5, exc=TimeoutError), attempts=2, sleep=lambda s: None)
+    pyproject.toml: |
+      [project]
+      name = "release-automation"
+      version = "2.1.0"
+
+      [tool.pytest.ini_options]
+      pythonpath = ["."]
+  script:
+    debugger:
+      - [{read_file: {path: automation/retry.py}}, {read_file: {path: tests/test_retry.py}}]
+      - run_tests: {}
+      - record_hypothesis: {statement: "The final-attempt check compares the 0-based attempt index with attempts, so it is never true: the loop sleeps once more and falls through, returning None"}
+      - edit_file: {path: automation/retry.py, old_string: "if attempt == attempts:", new_string: "if attempt == attempts - 1:"}
+      - run_tests: {}
+      - record_hypothesis: {statement: "The delay is recomputed from base_delay on every failure, so it never grows beyond base_delay * factor"}
+      - edit_file: {path: automation/retry.py, old_string: "delay = min(base_delay * factor, max_delay)", new_string: "delay = min(delay * factor, max_delay)"}
+      - run_tests: {}
+      - submit_result:
+          summary: "retry() now re-raises the last exception on the final attempt (no trailing sleep) and multiplies the previous delay by factor, capped at max_delay. Both hypotheses were confirmed by the failing tests; the full suite passes."
+          files_changed: [automation/retry.py]
+          confidence: high
+    reviewer:
+      - read_file: {path: automation/retry.py}
+      - submit_review: {verdict: approve, summary: "Off-by-one on the final attempt and the non-growing delay are both fixed; tests pin the delay sequence and re-raise."}
+  checks:
+    - status: completed
+    - min_level: strong
+    - evidence: {kind: tests, status: pass}
+    - command: "{python} -m pytest -q -p no:cacheprovider"
+    - command:
+        run: |
+          {python} - <<'EOF'
+          from automation.retry import retry
+          delays = []
+          try:
+              retry(lambda: 1 / 0, attempts=1, sleep=delays.append)
+          except ZeroDivisionError:
+              pass
+          else:
+              raise AssertionError("single attempt must re-raise")
+          assert delays == [], delays
+          calls = []
+          def flaky():
+              calls.append(1)
+              if len(calls) < 4:
+                  raise OSError("busy")
+              return 42
+          assert retry(flaky, attempts=4, base_delay=0.25, factor=2, sleep=delays.append) == 42
+          assert delays == [0.25, 0.5, 1.0], delays
+          print("retry ok")
+          EOF
+        expect_output: "retry ok"
+    - changed_only: [automation/retry.py, tests/*.py]

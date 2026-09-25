@@ -1,0 +1,146 @@
+# Telegram bot work against a local dispatcher abstraction (no Telegram API, no network).
+- id: telegram-start-command
+  family: telegram-bot
+  title: Add a /start command handler to a Telegram-style dispatcher, specified by existing tests
+  request: >-
+    Add a /start command to the Telegram bot: register a handler in bot/handlers.py that greets the
+    user by first name ("Hello, <first name>!") and then lists the available commands, following the
+    existing /help handler. The expected behaviour is already specified in tests/test_handlers.py.
+  mode: direct
+  test_command: "{python} -m pytest -q -p no:cacheprovider"
+  files:
+    bot/__init__.py: ""
+    bot/dispatcher.py: |
+      """Minimal update dispatcher modelled on Telegram bot frameworks (no network access)."""
+
+      from __future__ import annotations
+
+      from collections.abc import Callable
+      from dataclasses import dataclass
+
+
+      @dataclass(frozen=True)
+      class User:
+          id: int
+          first_name: str
+
+
+      @dataclass(frozen=True)
+      class Message:
+          chat_id: int
+          text: str
+          user: User
+
+
+      Handler = Callable[[Message, list[str]], str]
+
+
+      class Dispatcher:
+          def __init__(self, bot_username: str) -> None:
+              self.bot_username = bot_username
+              self._handlers: dict[str, Handler] = {}
+
+          def command(self, name: str) -> Callable[[Handler], Handler]:
+              def register(fn: Handler) -> Handler:
+                  self._handlers[name] = fn
+                  return fn
+
+              return register
+
+          @property
+          def commands(self) -> list[str]:
+              return sorted(self._handlers)
+
+          def dispatch(self, message: Message) -> str | None:
+              """Route a "/command arg ..." message to its handler; other text is ignored."""
+              text = message.text.strip()
+              if not text.startswith("/"):
+                  return None
+              head, *args = text.split()
+              handler = self._handlers.get(head[1:])
+              return handler(message, args) if handler else None
+    bot/handlers.py: |
+      from bot.dispatcher import Dispatcher, Message
+
+      dp = Dispatcher(bot_username="acme_bot")
+
+
+      @dp.command("help")
+      def help_command(message: Message, args: list[str]) -> str:
+          return "Available commands: " + ", ".join("/" + name for name in dp.commands)
+    tests/test_handlers.py: |
+      from bot.dispatcher import Message, User
+      from bot.handlers import dp
+
+
+      def msg(text: str) -> Message:
+          return Message(chat_id=1, text=text, user=User(id=7, first_name="Ada"))
+
+
+      def test_help_lists_commands():
+          assert "/help" in dp.dispatch(msg("/help"))
+
+
+      def test_plain_text_and_unknown_commands_are_ignored():
+          assert dp.dispatch(msg("hello there")) is None
+          assert dp.dispatch(msg("/nope")) is None
+
+
+      def test_start_greets_user_by_first_name():
+          reply = dp.dispatch(msg("/start"))
+          assert reply is not None
+          assert reply.startswith("Hello, Ada!")
+
+
+      def test_start_lists_available_commands():
+          reply = dp.dispatch(msg("/start"))
+          assert "/help" in reply and "/start" in reply
+    pyproject.toml: |
+      [project]
+      name = "acme-bot"
+      version = "0.1.0"
+
+      [tool.pytest.ini_options]
+      pythonpath = ["."]
+  script:
+    implementer:
+      - [{read_file: {path: bot/handlers.py}}, {read_file: {path: bot/dispatcher.py}}, {read_file: {path: tests/test_handlers.py}}]
+      - run_tests: {}
+      - edit_file:
+          path: bot/handlers.py
+          old_string: 'return "Available commands: " + ", ".join("/" + name for name in dp.commands)'
+          new_string: |-
+            return "Available commands: " + ", ".join("/" + name for name in dp.commands)
+
+
+            @dp.command("start")
+            def start_command(message: Message, args: list[str]) -> str:
+                commands = ", ".join("/" + name for name in dp.commands)
+                return f"Hello, {message.user.first_name}! Available commands: {commands}"
+      - run_tests: {}
+      - submit_result:
+          summary: "Registered a /start handler that greets the user by first name and lists the registered commands; all 4 handler tests pass."
+          files_changed: [bot/handlers.py]
+          commands_run: ["-m pytest -q -p no:cacheprovider"]
+          confidence: high
+    reviewer:
+      - read_file: {path: bot/handlers.py}
+      - submit_review: {verdict: approve, summary: "The /start handler follows the /help pattern, greets by first name and lists commands; tests cover it."}
+  checks:
+    - status: completed
+    - min_level: strong
+    - file_matches: {path: bot/handlers.py, regex: 'dp\.command\(\s*["'']start["'']\s*\)'}
+    - command: "{python} -m pytest -q -p no:cacheprovider"
+    - command:
+        run: |
+          {python} - <<'EOF'
+          from bot.dispatcher import Message, User
+          from bot.handlers import dp
+          reply = dp.dispatch(Message(chat_id=5, text="/start extra args", user=User(id=9, first_name="Grace")))
+          assert reply and reply.startswith("Hello, Grace!"), reply
+          assert "/help" in reply and "/start" in reply, reply
+          assert dp.dispatch(Message(chat_id=5, text="start", user=User(id=9, first_name="Grace"))) is None
+          print("start handler ok")
+          EOF
+        expect_output: "start handler ok"
+    - changed_only: [bot/handlers.py, tests/*.py]

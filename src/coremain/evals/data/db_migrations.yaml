@@ -1,0 +1,225 @@
+# Database migrations: a forward-only sqlite3 migration runner (planned change, idempotency tested).
+- id: db-add-orders-migration
+  family: db-migrations
+  title: Plan and add a sqlite3 migration (table, FK, CHECK, index) that upgrades existing databases idempotently
+  request: >-
+    Add migration 3 to app/migrations.py that creates an `orders` table (id, user_id referencing
+    users.id, total_cents integer that must never be negative, created_at) plus an index on
+    orders.user_id. Existing version-2 databases must upgrade in place without losing data, and
+    migrate() must stay idempotent. tests/test_migrations.py describes the expected behaviour.
+  mode: plan
+  test_command: "{python} -m pytest -q -p no:cacheprovider"
+  files:
+    app/__init__.py: ""
+    app/migrations.py: |
+      """Forward-only schema migrations for the SQLite database.
+
+      Each migration runs in its own transaction together with its ``schema_migrations`` record,
+      so a failed migration leaves no trace; ``migrate()`` applies only what is missing, in order.
+      """
+
+      from __future__ import annotations
+
+      import sqlite3
+
+      MIGRATIONS: list[tuple[int, str, list[str]]] = [
+          (
+              1,
+              "create users",
+              ["CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL UNIQUE)"],
+          ),
+          (
+              2,
+              "add users.created_at",
+              ["ALTER TABLE users ADD COLUMN created_at TEXT"],
+          ),
+      ]
+
+
+      def connect(path: str = ":memory:") -> sqlite3.Connection:
+          conn = sqlite3.connect(path, isolation_level=None)  # transactions are explicit below
+          conn.execute("PRAGMA foreign_keys = ON")
+          return conn
+
+
+      def applied_versions(conn: sqlite3.Connection) -> set[int]:
+          conn.execute(
+              "CREATE TABLE IF NOT EXISTS schema_migrations ("
+              "version INTEGER PRIMARY KEY, name TEXT NOT NULL, "
+              "applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
+          )
+          return {row[0] for row in conn.execute("SELECT version FROM schema_migrations")}
+
+
+      def migrate(conn: sqlite3.Connection) -> list[int]:
+          """Apply pending migrations in version order; return the versions applied by this call."""
+          done = applied_versions(conn)
+          applied: list[int] = []
+          for version, name, statements in sorted(MIGRATIONS):
+              if version in done:
+                  continue
+              conn.execute("BEGIN IMMEDIATE")
+              try:
+                  for sql in statements:
+                      conn.execute(sql)
+                  conn.execute(
+                      "INSERT INTO schema_migrations(version, name) VALUES (?, ?)", (version, name)
+                  )
+              except BaseException:
+                  conn.execute("ROLLBACK")
+                  raise
+              conn.execute("COMMIT")
+              applied.append(version)
+          return applied
+    tests/test_migrations.py: |
+      import sqlite3
+
+      import pytest
+
+      from app import migrations
+      from app.migrations import connect, migrate
+
+
+      def tables(conn):
+          return {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+
+
+      def test_fresh_database_gets_every_migration():
+          conn = connect()
+          assert migrate(conn) == [v for v, _, _ in sorted(migrations.MIGRATIONS)]
+          assert {"users", "schema_migrations"} <= tables(conn)
+
+
+      def test_migrate_is_idempotent():
+          conn = connect()
+          migrate(conn)
+          assert migrate(conn) == []
+          count = conn.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0]
+          assert count == len(migrations.MIGRATIONS)
+
+
+      def test_orders_reference_existing_users():
+          conn = connect()
+          migrate(conn)
+          conn.execute("INSERT INTO users(id, email) VALUES (1, 'a@example.com')")
+          conn.execute("INSERT INTO orders(user_id, total_cents) VALUES (1, 1250)")
+          with pytest.raises(sqlite3.IntegrityError):
+              conn.execute("INSERT INTO orders(user_id, total_cents) VALUES (999, 100)")
+
+
+      def test_order_totals_cannot_be_negative():
+          conn = connect()
+          migrate(conn)
+          conn.execute("INSERT INTO users(id, email) VALUES (1, 'a@example.com')")
+          with pytest.raises(sqlite3.IntegrityError):
+              conn.execute("INSERT INTO orders(user_id, total_cents) VALUES (1, -5)")
+
+
+      def test_version_2_database_upgrades_in_place(tmp_path, monkeypatch):
+          path = str(tmp_path / "app.db")
+          full = list(migrations.MIGRATIONS)
+          monkeypatch.setattr(migrations, "MIGRATIONS", [m for m in full if m[0] <= 2])
+          conn = connect(path)
+          migrate(conn)
+          conn.execute("INSERT INTO users(email) VALUES ('old@example.com')")
+          conn.close()
+          monkeypatch.setattr(migrations, "MIGRATIONS", full)
+          conn = connect(path)
+          assert migrate(conn) == [v for v, _, _ in sorted(full) if v > 2]
+          assert conn.execute("SELECT email FROM users").fetchall() == [("old@example.com",)]
+          assert "orders" in tables(conn)
+    pyproject.toml: |
+      [project]
+      name = "shop-db"
+      version = "0.4.0"
+
+      [tool.pytest.ini_options]
+      pythonpath = ["."]
+  script:
+    planner:
+      - [{read_file: {path: app/migrations.py}}, {read_file: {path: tests/test_migrations.py}}]
+      - submit_plan:
+          approach: "Append migration 3 to MIGRATIONS. The runner already applies pending versions in order inside one transaction per migration and records them, so in-place upgrades and idempotency follow from registering the migration correctly."
+          steps:
+            - title: "Add migration 3 (create orders)"
+              detail: "orders(id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), total_cents INTEGER NOT NULL CHECK (total_cents >= 0), created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP) and CREATE INDEX idx_orders_user_id ON orders(user_id), as two statements of one migration"
+              files: [app/migrations.py]
+            - title: "Verify fresh install, upgrade from v2 and idempotency"
+              detail: "Run the migration test suite"
+              files: [tests/test_migrations.py]
+          risks:
+            - "Foreign keys are only enforced with PRAGMA foreign_keys=ON; connect() already sets it"
+            - "Never edit migrations 1-2: deployed databases have already recorded them"
+          test_strategy: "pytest tests/test_migrations.py (fresh DB, idempotency, v2 upgrade, FK and CHECK constraints)"
+          acceptance:
+            - {criterion: "fresh databases get the orders table with FK and CHECK constraints", verification: "test_orders_reference_existing_users, test_order_totals_cannot_be_negative"}
+            - {criterion: "v2 databases upgrade in place without data loss", verification: "test_version_2_database_upgrades_in_place"}
+            - {criterion: "migrate() is idempotent", verification: "test_migrate_is_idempotent"}
+    implementer:
+      - read_file: {path: app/migrations.py}
+      - edit_file:
+          path: app/migrations.py
+          old_string: |-
+            ["ALTER TABLE users ADD COLUMN created_at TEXT"],
+                ),
+            ]
+          new_string: |-
+            ["ALTER TABLE users ADD COLUMN created_at TEXT"],
+                ),
+                (
+                    3,
+                    "create orders",
+                    [
+                        "CREATE TABLE orders ("
+                        "id INTEGER PRIMARY KEY, "
+                        "user_id INTEGER NOT NULL REFERENCES users(id), "
+                        "total_cents INTEGER NOT NULL CHECK (total_cents >= 0), "
+                        "created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
+                        "CREATE INDEX idx_orders_user_id ON orders(user_id)",
+                    ],
+                ),
+            ]
+      - run_tests: {}
+      - submit_result:
+          summary: "Added migration 3 (orders table with FK to users, non-negative CHECK on total_cents, created_at default, index on user_id). Fresh installs, v2 upgrades and repeated migrate() calls pass the migration tests."
+          files_changed: [app/migrations.py]
+          confidence: high
+    reviewer:
+      - read_file: {path: app/migrations.py}
+      - submit_review: {verdict: approve, summary: "Migration 3 is appended without touching deployed migrations; constraints and index match the request and the upgrade path is tested."}
+  checks:
+    - status: completed
+    - min_level: strong
+    - command: "{python} -m pytest -q -p no:cacheprovider"
+    - command:
+        run: |
+          {python} - <<'EOF'
+          import sqlite3
+          from app.migrations import connect, migrate
+          conn = connect()
+          first = migrate(conn)
+          assert 3 in first and migrate(conn) == [], first
+          versions = [r[0] for r in conn.execute("SELECT version FROM schema_migrations ORDER BY version")]
+          assert versions == sorted(set(versions)) and 3 in versions, versions
+          cols = {r[1]: r for r in conn.execute("PRAGMA table_info(orders)")}
+          assert {"id", "user_id", "total_cents", "created_at"} <= set(cols), cols
+          indexed = {
+              col[2]
+              for idx in conn.execute("PRAGMA index_list(orders)")
+              for col in conn.execute(f"PRAGMA index_info('{idx[1]}')")
+          }
+          assert "user_id" in indexed, indexed
+          fks = [(r[2], r[3], r[4]) for r in conn.execute("PRAGMA foreign_key_list(orders)")]
+          assert ("users", "user_id", "id") in fks, fks
+          conn.execute("INSERT INTO users(id, email) VALUES (1, 'x@example.com')")
+          for bad in ("INSERT INTO orders(user_id, total_cents) VALUES (1, -1)",
+                      "INSERT INTO orders(user_id, total_cents) VALUES (2, 1)"):
+              try:
+                  conn.execute(bad)
+              except sqlite3.IntegrityError:
+                  continue
+              raise AssertionError(f"accepted: {bad}")
+          print("migration 3 ok")
+          EOF
+        expect_output: "migration 3 ok"
+    - changed_only: [app/migrations.py, tests/*.py]

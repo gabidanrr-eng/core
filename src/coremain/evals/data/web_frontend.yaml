@@ -1,0 +1,136 @@
+# Web frontend: an ES module used by the cart UI, tested with node's built-in test runner.
+- id: frontend-price-formatting
+  family: web-frontend
+  title: Fix cart price formatting (two decimals, thousands separators, negatives) in an ES module
+  request: >-
+    The cart summary shows prices like $5.5 and $1234567.89. Update formatPrice in src/format.js so
+    every price has exactly two decimals and thousands separators ($5.50, $1,234,567.89) and negative
+    amounts render as -$5.50. Keep the per-currency symbols. Tests live in test/cart.test.js and run
+    with node --test.
+  mode: direct
+  requires: [node]
+  test_command: "node --test"
+  files:
+    package.json: |
+      {
+        "name": "acme-shop-ui",
+        "private": true,
+        "type": "module",
+        "scripts": {"test": "node --test"}
+      }
+    src/format.js: |
+      // Formatting helpers shared by the cart and checkout views.
+      const SYMBOLS = { USD: "$", EUR: "€", GBP: "£" };
+
+      export function formatPrice(cents, currency = "USD") {
+        const symbol = SYMBOLS[currency] ?? `${currency} `;
+        return `${symbol}${cents / 100}`;
+      }
+    src/cart.js: |
+      import { formatPrice } from "./format.js";
+
+      const ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+
+      function escapeHtml(text) {
+        return String(text).replace(/[&<>"']/g, (ch) => ESCAPES[ch]);
+      }
+
+      export function cartTotal(items) {
+        return items.reduce((sum, item) => sum + item.priceCents * item.quantity, 0);
+      }
+
+      export function renderCartSummary(items, currency = "USD") {
+        const rows = items
+          .map(
+            (item) =>
+              `<li>${escapeHtml(item.name)} × ${item.quantity} ` +
+              `<span class="price">${formatPrice(item.priceCents * item.quantity, currency)}</span></li>`,
+          )
+          .join("");
+        return `<ul class="cart">${rows}</ul><p class="total">Total: ${formatPrice(cartTotal(items), currency)}</p>`;
+      }
+    test/cart.test.js: |
+      import test from "node:test";
+      import assert from "node:assert/strict";
+      import { cartTotal, renderCartSummary } from "../src/cart.js";
+      import { formatPrice } from "../src/format.js";
+
+      test("cart total sums line items in cents", () => {
+        const items = [
+          { name: "Tea", priceCents: 450, quantity: 2 },
+          { name: "Mug", priceCents: 1299, quantity: 1 },
+        ];
+        assert.equal(cartTotal(items), 2199);
+      });
+
+      test("prices always show two decimals", () => {
+        assert.equal(formatPrice(550), "$5.50");
+        assert.equal(formatPrice(1200), "$12.00");
+        assert.equal(formatPrice(5), "$0.05");
+      });
+
+      test("large prices use thousands separators", () => {
+        assert.equal(formatPrice(123456789), "$1,234,567.89");
+      });
+
+      test("summary escapes names and shows the formatted total", () => {
+        const html = renderCartSummary([{ name: "<Tea>", priceCents: 450, quantity: 2 }]);
+        assert.match(html, /&lt;Tea&gt;/);
+        assert.match(html, /Total: \$9\.00/);
+      });
+  script:
+    implementer:
+      - [{read_file: {path: src/format.js}}, {read_file: {path: src/cart.js}}, {read_file: {path: test/cart.test.js}}]
+      - run_tests: {}
+      - write_file:
+          path: src/format.js
+          content: |
+            // Formatting helpers shared by the cart and checkout views.
+            const SYMBOLS = { USD: "$", EUR: "€", GBP: "£" };
+
+            // Integer arithmetic on cents avoids floating-point artefacts such as 1.005 -> "1.00".
+            export function formatPrice(cents, currency = "USD") {
+              const symbol = SYMBOLS[currency] ?? `${currency} `;
+              const abs = Math.abs(Math.round(cents));
+              const whole = String(Math.floor(abs / 100)).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+              const fraction = String(abs % 100).padStart(2, "0");
+              return `${cents < 0 ? "-" : ""}${symbol}${whole}.${fraction}`;
+            }
+      - edit_file:
+          path: test/cart.test.js
+          old_string: 'assert.equal(formatPrice(123456789), "$1,234,567.89");'
+          new_string: |-
+            assert.equal(formatPrice(123456789), "$1,234,567.89");
+            });
+
+            test("negative amounts put the sign before the symbol", () => {
+              assert.equal(formatPrice(-550), "-$5.50");
+              assert.equal(formatPrice(-99, "EUR"), "-€0.99");
+      - run_tests: {}
+      - submit_result:
+          summary: "formatPrice now formats integer cents with two decimals, comma thousands separators and a leading minus for negatives, keeping per-currency symbols. Added a negative-amount test; node --test passes."
+          files_changed: [src/format.js, test/cart.test.js]
+          tests_added_or_changed: [test/cart.test.js]
+          commands_run: ["node --test"]
+          confidence: high
+    reviewer:
+      - read_file: {path: src/format.js}
+      - submit_review: {verdict: approve, summary: "Integer-cent formatting is exact; separators, padding and negative sign are covered by tests."}
+  checks:
+    - status: completed
+    - min_level: strong
+    - command: "node --test"
+    - command:
+        run: |
+          node --input-type=module <<'EOF'
+          import assert from "node:assert/strict";
+          import { formatPrice } from "./src/format.js";
+          assert.equal(formatPrice(0), "$0.00");
+          assert.equal(formatPrice(100000), "$1,000.00");
+          assert.equal(formatPrice(-550), "-$5.50");
+          assert.equal(formatPrice(99, "EUR"), "€0.99");
+          assert.equal(formatPrice(123456, "GBP"), "£1,234.56");
+          console.log("formatPrice ok");
+          EOF
+        expect_output: "formatPrice ok"
+    - changed_only: [src/format.js, test/*.js]

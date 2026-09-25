@@ -1,0 +1,167 @@
+# Discord bot work: message → command parsing for a local bot core (no Discord API, no network).
+- id: discord-prefix-parsing
+  family: discord-bot
+  title: Fix command parsing for multi-character guild prefixes and repeated whitespace
+  request: >-
+    Bug: parse_command() in discord_bot/parsing.py breaks for guilds that use a multi-character
+    prefix such as ">>", and "!roll  2d6" (two spaces) produces an empty first argument.
+    test_multichar_prefix and test_extra_spaces_between_arguments fail. Fix the parser without
+    changing its signature, and keep ignoring messages where the prefix is not directly followed
+    by a command name.
+  test_command: "{python} -m pytest -q -p no:cacheprovider"
+  files:
+    discord_bot/__init__.py: ""
+    discord_bot/parsing.py: |
+      """Parse chat messages into bot commands (per-guild prefix, whitespace separated arguments)."""
+
+      from __future__ import annotations
+
+      from dataclasses import dataclass
+
+
+      @dataclass(frozen=True)
+      class Command:
+          name: str
+          args: list[str]
+
+
+      def parse_command(content: str, prefix: str = "!") -> Command | None:
+          """Return the command in ``content`` or None when the message is not a command."""
+          if not content.startswith(prefix):
+              return None
+          parts = content[1:].split(" ")
+          name, args = parts[0], parts[1:]
+          if not name:
+              return None
+          return Command(name.lower(), args)
+    discord_bot/bot.py: |
+      from __future__ import annotations
+
+      import random
+      from collections.abc import Callable
+
+      from discord_bot.parsing import Command, parse_command
+
+      Handler = Callable[[Command], str]
+
+
+      def roll(command: Command) -> str:
+          spec = command.args[0] if command.args else "1d6"
+          count, _, sides = spec.partition("d")
+          rng = random.Random(0)
+          return str(sum(rng.randint(1, int(sides)) for _ in range(int(count or 1))))
+
+
+      class Bot:
+          def __init__(self, default_prefix: str = "!") -> None:
+              self.default_prefix = default_prefix
+              self.guild_prefixes: dict[int, str] = {}
+              self.handlers: dict[str, Handler] = {"ping": lambda command: "pong", "roll": roll}
+
+          def prefix_for(self, guild_id: int) -> str:
+              return self.guild_prefixes.get(guild_id, self.default_prefix)
+
+          def handle(self, guild_id: int, content: str) -> str | None:
+              command = parse_command(content, self.prefix_for(guild_id))
+              if command is None or command.name not in self.handlers:
+                  return None
+              return self.handlers[command.name](command)
+    tests/test_parsing.py: |
+      from discord_bot.bot import Bot
+      from discord_bot.parsing import Command, parse_command
+
+
+      def test_simple_command():
+          assert parse_command("!ping") == Command("ping", [])
+
+
+      def test_arguments_and_case():
+          assert parse_command("!ROLL 2d6 fast") == Command("roll", ["2d6", "fast"])
+
+
+      def test_non_commands_are_ignored():
+          assert parse_command("hello !ping") is None
+          assert parse_command("!") is None
+
+
+      def test_multichar_prefix():
+          assert parse_command(">>ping", prefix=">>") == Command("ping", [])
+          assert parse_command(">ping", prefix=">>") is None
+
+
+      def test_extra_spaces_between_arguments():
+          assert parse_command("!roll  2d6   fast ") == Command("roll", ["2d6", "fast"])
+
+
+      def test_bot_uses_guild_prefix():
+          bot = Bot()
+          bot.guild_prefixes[42] = ">>"
+          assert bot.handle(42, ">>ping") == "pong"
+          assert bot.handle(42, "!ping") is None
+          assert bot.handle(7, "!ping") == "pong"
+    pyproject.toml: |
+      [project]
+      name = "acme-discord-bot"
+      version = "0.3.0"
+
+      [tool.pytest.ini_options]
+      pythonpath = ["."]
+  script:
+    debugger:
+      - [{read_file: {path: discord_bot/parsing.py}}, {read_file: {path: tests/test_parsing.py}}]
+      - record_hypothesis: {statement: "parse_command strips exactly one character instead of len(prefix) and splits on single spaces, so multi-character prefixes leak into the name and repeated spaces yield empty arguments"}
+      - edit_file:
+          path: discord_bot/parsing.py
+          old_string: |-
+            parts = content[1:].split(" ")
+                name, args = parts[0], parts[1:]
+                if not name:
+                    return None
+          new_string: |-
+            body = content[len(prefix):]
+                if not body or body[0].isspace():
+                    return None
+                name, *args = body.split()
+      - run_tests: {}
+      - edit_file:
+          path: tests/test_parsing.py
+          old_string: 'assert parse_command("!roll  2d6   fast ") == Command("roll", ["2d6", "fast"])'
+          new_string: |-
+            assert parse_command("!roll  2d6   fast ") == Command("roll", ["2d6", "fast"])
+
+
+            def test_prefix_must_be_followed_by_a_command_name():
+                assert parse_command("! ping") is None
+                assert parse_command(">>", prefix=">>") is None
+                assert parse_command("!roll\t2d6") == Command("roll", ["2d6"])
+      - run_tests: {}
+      - submit_result:
+          summary: "parse_command now strips the whole prefix and splits on any whitespace; a prefix followed by whitespace or nothing is still not a command. Added a regression test for those edge cases; all 7 tests pass."
+          files_changed: [discord_bot/parsing.py, tests/test_parsing.py]
+          tests_added_or_changed: [tests/test_parsing.py]
+          confidence: high
+    reviewer:
+      - read_file: {path: discord_bot/parsing.py}
+      - submit_review: {verdict: approve, summary: "Prefix length and whitespace handling are fixed; the new regression test pins the ignored-message edge cases."}
+  checks:
+    - status: completed
+    - min_level: strong
+    - evidence: {kind: repro, status: pass}
+    - file_not_contains: {path: discord_bot/parsing.py, text: "content[1:]"}
+    - command: "{python} -m pytest -q -p no:cacheprovider"
+    - command:
+        run: |
+          {python} - <<'EOF'
+          from discord_bot.bot import Bot
+          from discord_bot.parsing import Command, parse_command
+          assert parse_command("bot!help me now", prefix="bot!") == Command("help", ["me", "now"])
+          assert parse_command("!roll\t 2d6\n") == Command("roll", ["2d6"])
+          assert parse_command("! ping") is None
+          assert parse_command("?ping", prefix="?!") is None
+          bot = Bot()
+          bot.guild_prefixes[1] = "$$"
+          assert bot.handle(1, "$$ping") == "pong" and bot.handle(1, "$ping") is None
+          print("parser ok")
+          EOF
+        expect_output: "parser ok"
+    - changed_only: [discord_bot/parsing.py, tests/*.py]

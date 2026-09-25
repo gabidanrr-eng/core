@@ -1,0 +1,173 @@
+# Documentation: document a CLI's flags from its argparse source; code and tests stay untouched.
+- id: docs-cli-options
+  family: docs
+  title: Document every CLI flag in the README from the argparse definitions
+  request: >-
+    Document all command-line options of report-tool in README.md: add an "Options" section that
+    lists every flag defined in tool/cli.py (short and long form, default value, allowed choices
+    and what it does), taken from the argparse definitions. Do not change the code.
+  mode: direct
+  test_command: "{python} -m pytest -q -p no:cacheprovider"
+  files:
+    tool/__init__.py: ""
+    tool/cli.py: |
+      """report-tool: summarise a CSV export by counting the values of one column."""
+
+      from __future__ import annotations
+
+      import argparse
+      import csv
+      import json
+      import sys
+      from collections import Counter
+
+
+      def build_parser() -> argparse.ArgumentParser:
+          parser = argparse.ArgumentParser(prog="report-tool", description=__doc__)
+          parser.add_argument("-i", "--input", required=True, metavar="PATH", help="CSV file to read")
+          parser.add_argument("-o", "--output", default="report.csv", metavar="PATH", help="where to write the report")
+          parser.add_argument("--format", choices=["csv", "json"], default="csv", help="report format")
+          parser.add_argument("--group-by", default="status", metavar="COLUMN", help="column whose values are counted")
+          parser.add_argument("--limit", type=int, default=10, metavar="N", help="keep only the N most common values")
+          parser.add_argument("--dry-run", action="store_true", help="print the report instead of writing --output")
+          parser.add_argument("-v", "--verbose", action="count", default=0, help="log progress to stderr (repeatable)")
+          return parser
+
+
+      def summarise(rows, column: str, limit: int) -> list[tuple[str, int]]:
+          return Counter(row.get(column, "") for row in rows).most_common(limit)
+
+
+      def render(counts: list[tuple[str, int]], fmt: str) -> str:
+          if fmt == "json":
+              return json.dumps(dict(counts), indent=2) + "\n"
+          return "value,count\n" + "".join(f"{value},{count}\n" for value, count in counts)
+
+
+      def main(argv: list[str] | None = None) -> int:
+          args = build_parser().parse_args(argv)
+          with open(args.input, newline="", encoding="utf-8") as fh:
+              counts = summarise(csv.DictReader(fh), args.group_by, args.limit)
+          if args.verbose:
+              print(f"{len(counts)} distinct value(s) of {args.group_by}", file=sys.stderr)
+          text = render(counts, args.format)
+          if args.dry_run:
+              sys.stdout.write(text)
+          else:
+              with open(args.output, "w", encoding="utf-8") as fh:
+                  fh.write(text)
+          return 0
+
+
+      if __name__ == "__main__":
+          raise SystemExit(main())
+    tests/test_cli.py: |
+      import json
+
+      from tool.cli import main
+
+
+      def write_csv(path):
+          path.write_text("id,status\n1,open\n2,closed\n3,open\n", encoding="utf-8")
+
+
+      def test_dry_run_prints_csv(tmp_path, capsys):
+          src = tmp_path / "t.csv"
+          write_csv(src)
+          assert main(["-i", str(src), "--dry-run"]) == 0
+          assert capsys.readouterr().out == "value,count\nopen,2\nclosed,1\n"
+
+
+      def test_writes_json_report(tmp_path):
+          src, out = tmp_path / "t.csv", tmp_path / "r.json"
+          write_csv(src)
+          assert main(["--input", str(src), "--format", "json", "--limit", "1", "-o", str(out)]) == 0
+          assert json.loads(out.read_text()) == {"open": 2}
+    README.md: |
+      # report-tool
+
+      Summarise CSV exports (tickets, orders, sign-ups) into small count reports.
+
+      ## Installation
+
+          pip install -e .
+
+      ## Usage
+
+          python -m tool.cli --input tickets.csv --group-by priority --dry-run
+
+      ## Development
+
+      Run the tests with `python -m pytest`.
+    pyproject.toml: |
+      [project]
+      name = "report-tool"
+      version = "0.5.1"
+
+      [tool.pytest.ini_options]
+      pythonpath = ["."]
+  script:
+    implementer:
+      - [{read_file: {path: tool/cli.py}}, {read_file: {path: README.md}}]
+      - edit_file:
+          path: README.md
+          old_string: |-
+            python -m tool.cli --input tickets.csv --group-by priority --dry-run
+
+            ## Development
+          new_string: |-
+            python -m tool.cli --input tickets.csv --group-by priority --dry-run
+
+            ## Options
+
+            | Option | Default | Description |
+            | --- | --- | --- |
+            | `-i PATH`, `--input PATH` | *(required)* | CSV file to read. |
+            | `-o PATH`, `--output PATH` | `report.csv` | Where to write the report (ignored with `--dry-run`). |
+            | `--format {csv,json}` | `csv` | Report format: `csv` or `json`. |
+            | `--group-by COLUMN` | `status` | Column whose values are counted. |
+            | `--limit N` | `10` | Keep only the N most common values. |
+            | `--dry-run` | off | Print the report to stdout instead of writing `--output`. |
+            | `-v`, `--verbose` | off | Log progress to stderr; repeat (`-vv`) for more. |
+            | `-h`, `--help` | | Show the help text and exit. |
+
+            ## Development
+      - run_tests: {}
+      - submit_result:
+          summary: "Added an Options section to README.md documenting every argparse flag of tool/cli.py (short/long forms, metavars, defaults, choices, meaning). No code changed; tests still pass."
+          files_changed: [README.md]
+          confidence: high
+    reviewer:
+      - [{read_file: {path: README.md}}, {read_file: {path: tool/cli.py}}]
+      - submit_review: {verdict: approve, summary: "Every flag, default and choice in build_parser() is documented accurately."}
+  checks:
+    - status: completed
+    - min_level: strong
+    - file_contains: {path: README.md, text: ["--input", "--output", "--format", "--group-by", "--limit", "--dry-run", "--verbose"]}
+    # Derived from the source: every option string, default and choice appears in the Options section.
+    - command:
+        run: |
+          {python} - <<'EOF'
+          import argparse, re
+          from tool.cli import build_parser
+          readme = open("README.md", encoding="utf-8").read()
+          m = re.search(r"^#+[^\n]*\boptions\b[^\n]*$(.*?)(?=^#{1,2} |\Z)", readme, re.M | re.S | re.I)
+          assert m, "README.md has no Options section"
+          section, problems = m.group(1), []
+          for action in build_parser()._actions:
+              if isinstance(action, argparse._HelpAction):
+                  continue
+              for opt in action.option_strings:
+                  if not re.search(rf"(?<![\w-]){re.escape(opt)}(?![\w-])", section):
+                      problems.append(f"flag {opt} missing")
+              if action.default not in (None, False, 0, argparse.SUPPRESS) and str(action.default) not in section:
+                  problems.append(f"default {action.default!r} of {action.option_strings[-1]} missing")
+              for choice in action.choices or []:
+                  if str(choice) not in section:
+                      problems.append(f"choice {choice!r} missing")
+          assert not problems, problems
+          print("all options documented")
+          EOF
+        expect_output: "all options documented"
+    - command: "{python} -m pytest -q -p no:cacheprovider"
+    - changed_only: [README.md]

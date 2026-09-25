@@ -1,0 +1,167 @@
+# Refactoring: a planned, behaviour-preserving rename across several modules, tests and docs.
+- id: refactor-rename-across-modules
+  family: refactoring
+  title: Rename a function across modules, alias imports, tests and README while keeping tests green
+  request: >-
+    Rename shop.pricing.calc_total to compute_order_total across the codebase: the definition, every
+    import and call site (including aliased and module-qualified uses), the tests and the README.
+    Behaviour must not change and no backwards-compatible alias should remain.
+  mode: plan
+  test_command: "{python} -m pytest -q -p no:cacheprovider"
+  files:
+    shop/__init__.py: ""
+    shop/pricing.py: |
+      """Order pricing rules."""
+
+      from __future__ import annotations
+
+      from decimal import ROUND_HALF_UP, Decimal
+
+      TAX_RATE = Decimal("0.20")
+      Line = tuple[str, int, Decimal]  # (sku, quantity, unit price)
+
+
+      def calc_total(lines: list[Line], discount: Decimal = Decimal("0")) -> Decimal:
+          """Total of the lines after discount, including tax, rounded to cents."""
+          subtotal = sum((qty * price for _, qty, price in lines), Decimal("0"))
+          taxed = max(subtotal - discount, Decimal("0")) * (1 + TAX_RATE)
+          return taxed.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    shop/cart.py: |
+      from __future__ import annotations
+
+      from decimal import Decimal
+
+      from shop.pricing import Line, calc_total
+
+
+      class Cart:
+          def __init__(self) -> None:
+              self.lines: list[Line] = []
+
+          def add(self, sku: str, quantity: int, unit_price: str) -> None:
+              self.lines.append((sku, quantity, Decimal(unit_price)))
+
+          def total(self) -> Decimal:
+              return calc_total(self.lines)
+    shop/checkout.py: |
+      from __future__ import annotations
+
+      from decimal import Decimal
+
+      from shop import pricing
+      from shop.cart import Cart
+
+      COUPONS = {"WELCOME5": Decimal("5.00")}
+
+
+      def checkout(cart: Cart, coupon: str | None = None) -> dict[str, str]:
+          discount = COUPONS.get(coupon or "", Decimal("0"))
+          total = pricing.calc_total(cart.lines, discount)
+          return {"total": str(total), "discount": str(discount)}
+    shop/reports.py: |
+      from __future__ import annotations
+
+      from decimal import Decimal
+
+      from shop.pricing import Line
+      from shop.pricing import calc_total as order_total
+
+
+      def daily_revenue(orders: list[list[Line]]) -> Decimal:
+          return sum((order_total(lines) for lines in orders), Decimal("0"))
+    tests/test_pricing.py: |
+      from decimal import Decimal
+
+      from shop.cart import Cart
+      from shop.checkout import checkout
+      from shop.pricing import calc_total
+      from shop.reports import daily_revenue
+
+
+      def test_total_includes_tax():
+          assert calc_total([("tea", 2, Decimal("4.50"))]) == Decimal("10.80")
+
+
+      def test_discount_never_makes_total_negative():
+          assert calc_total([("tea", 1, Decimal("1.00"))], Decimal("5")) == Decimal("0.00")
+
+
+      def test_cart_and_checkout_agree():
+          cart = Cart()
+          cart.add("mug", 1, "12.99")
+          assert cart.total() == Decimal("15.59")
+          assert checkout(cart, "WELCOME5") == {"total": "9.59", "discount": "5.00"}
+
+
+      def test_daily_revenue_sums_orders():
+          orders = [[("tea", 1, Decimal("10"))], [("mug", 2, Decimal("5"))]]
+          assert daily_revenue(orders) == Decimal("24.00")
+    README.md: |
+      # shop
+
+      Pricing, carts and checkout for the Acme web shop.
+
+      ## Pricing
+
+      All totals go through `shop.pricing.calc_total(lines, discount)`, which applies the discount,
+      adds 20% tax and rounds to cents.
+    pyproject.toml: |
+      [project]
+      name = "shop"
+      version = "1.8.0"
+
+      [tool.pytest.ini_options]
+      pythonpath = ["."]
+  script:
+    planner:
+      - find_references: {identifier: calc_total}
+      - [{read_file: {path: shop/pricing.py}}, {read_file: {path: shop/reports.py}}, {read_file: {path: shop/checkout.py}}]
+      - submit_plan:
+          approach: "Mechanical rename of calc_total to compute_order_total in one change set: the definition, direct imports, the aliased import in reports.py (keep the local alias order_total), the module-qualified call in checkout.py, the tests and the README; no compatibility alias. Verify with the test suite and a repository-wide search."
+          steps:
+            - {title: "Rename the definition", files: [shop/pricing.py]}
+            - {title: "Update imports and call sites", detail: "cart.py (direct import), checkout.py (pricing.calc_total), reports.py (aliased import)", files: [shop/cart.py, shop/checkout.py, shop/reports.py]}
+            - {title: "Update tests and docs", files: [tests/test_pricing.py, README.md]}
+            - {title: "Verify", detail: "run the suite and search for leftover references"}
+          risks: ["Module-qualified and aliased uses are easy to miss with a plain import search"]
+          test_strategy: "Existing tests cover pricing, cart, checkout and reports; they must pass unchanged apart from the name."
+          acceptance:
+            - {criterion: "no reference to calc_total remains", verification: "search_text calc_total returns nothing"}
+            - {criterion: "behaviour unchanged", verification: "full test suite passes"}
+    implementer:
+      - [{read_file: {path: shop/pricing.py}}, {read_file: {path: shop/cart.py}}, {read_file: {path: shop/checkout.py}}, {read_file: {path: shop/reports.py}}, {read_file: {path: tests/test_pricing.py}}, {read_file: {path: README.md}}]
+      - - {edit_file: {path: shop/pricing.py, old_string: "def calc_total(", new_string: "def compute_order_total("}}
+        - {edit_file: {path: shop/cart.py, old_string: calc_total, new_string: compute_order_total, replace_all: true}}
+        - {edit_file: {path: shop/checkout.py, old_string: pricing.calc_total, new_string: pricing.compute_order_total}}
+        - {edit_file: {path: shop/reports.py, old_string: "import calc_total as order_total", new_string: "import compute_order_total as order_total"}}
+        - {edit_file: {path: tests/test_pricing.py, old_string: calc_total, new_string: compute_order_total, replace_all: true}}
+        - {edit_file: {path: README.md, old_string: shop.pricing.calc_total, new_string: shop.pricing.compute_order_total}}
+      - search_text: {pattern: calc_total}
+      - run_tests: {}
+      - submit_result:
+          summary: "Renamed calc_total to compute_order_total in pricing.py, cart.py, checkout.py (module-qualified call), reports.py (aliased import), the tests and the README. No references remain and the suite passes unchanged."
+          files_changed: [shop/pricing.py, shop/cart.py, shop/checkout.py, shop/reports.py, tests/test_pricing.py, README.md]
+          tests_added_or_changed: [tests/test_pricing.py]
+          confidence: high
+    reviewer:
+      - search_text: {pattern: calc_total}
+      - submit_review: {verdict: approve, summary: "Pure rename: every reference updated, no alias left, behaviour covered by the unchanged tests."}
+  checks:
+    - status: completed
+    - min_level: strong
+    - repo_not_contains: "calc_total"
+    - file_matches: {path: shop/pricing.py, regex: '^def compute_order_total\('}
+    - command: "{python} -m pytest -q -p no:cacheprovider"
+    - command:
+        run: |
+          {python} - <<'EOF'
+          from decimal import Decimal
+          import shop.pricing as pricing
+          from shop.reports import daily_revenue
+          assert not hasattr(pricing, "calc_total"), "old name still exported"
+          assert pricing.compute_order_total([("a", 3, Decimal("1.10"))], Decimal("0.30")) == Decimal("3.60")
+          assert daily_revenue([[("a", 1, Decimal("2.50"))]]) == Decimal("3.00")
+          print("rename ok")
+          EOF
+        expect_output: "rename ok"
+    - changed_only: [shop/*.py, tests/*.py, README.md]

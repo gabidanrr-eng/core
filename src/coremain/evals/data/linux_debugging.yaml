@@ -1,0 +1,144 @@
+# Linux debugging: a shell script with a word-splitting bug, reproduced by a bash test script.
+- id: linux-log-rotation-spaces
+  family: linux-debugging
+  title: Debug a log-rotation script that deletes the wrong files when names contain spaces
+  request: >-
+    scripts/rotate_logs.sh deletes the wrong files when a log file name contains a space, and
+    tests/test_rotate.sh fails. Fix the script so it keeps the KEEP newest *.log files in the
+    directory (by modification time) and deletes only older *.log files, whatever their names,
+    without touching other files.
+  requires: [bash]
+  test_command: "bash tests/test_rotate.sh"
+  files:
+    scripts/rotate_logs.sh: |
+      #!/usr/bin/env bash
+      # Keep the newest KEEP *.log files in DIR (by modification time) and delete the older ones.
+      # usage: rotate_logs.sh DIR [KEEP]
+      set -euo pipefail
+
+      dir="${1:?usage: rotate_logs.sh DIR [KEEP]}"
+      keep="${2:-5}"
+
+      count=0
+      for f in $(ls -t "$dir"/*.log); do
+        count=$((count + 1))
+        if [ "$count" -gt "$keep" ]; then
+          rm "$f"
+        fi
+      done
+    tests/test_rotate.sh: |
+      #!/usr/bin/env bash
+      # Exercises scripts/rotate_logs.sh in a scratch directory; exits non-zero on any failure.
+      set -uo pipefail
+      here="$(cd "$(dirname "$0")" && pwd)"
+      script="$here/../scripts/rotate_logs.sh"
+      failures=0
+
+      check() {
+        local description="$1"
+        shift
+        if "$@"; then
+          echo "ok - $description"
+        else
+          echo "not ok - $description"
+          failures=$((failures + 1))
+        fi
+      }
+
+      tmp="$(mktemp -d)"
+      trap 'rm -rf "$tmp"' EXIT
+
+      for i in 1 2 3 4; do touch -t "2024010${i}1200" "$tmp/app-$i.log"; done
+      touch -t 202401051200 "$tmp/app server.log"
+      touch -t 202312311200 "$tmp/notes.txt"
+
+      bash "$script" "$tmp" 2
+      check "script exits successfully" test "$?" -eq 0
+      check "keeps the newest log (name with a space)" test -f "$tmp/app server.log"
+      check "keeps the second newest log" test -f "$tmp/app-4.log"
+      check "deletes app-3.log" test ! -e "$tmp/app-3.log"
+      check "deletes app-1.log" test ! -e "$tmp/app-1.log"
+      check "leaves non-log files alone" test -f "$tmp/notes.txt"
+
+      empty="$(mktemp -d)"
+      bash "$script" "$empty" 3
+      check "an empty directory is fine" test "$?" -eq 0
+      rmdir "$empty"
+
+      echo "$failures failure(s)"
+      [ "$failures" -eq 0 ]
+    README.md: |
+      # ops-scripts
+
+      Maintenance scripts for the build hosts. Run `bash tests/test_rotate.sh` before deploying changes.
+  script:
+    debugger:
+      - [{read_file: {path: scripts/rotate_logs.sh}}, {read_file: {path: tests/test_rotate.sh}}]
+      - run_command: {command: "bash tests/test_rotate.sh"}
+      - record_hypothesis: {statement: "for f in $(ls -t ...) word-splits paths on spaces, so 'app server.log' becomes two words: the counter drifts and rm targets the wrong (or nonexistent) files"}
+      - write_file:
+          path: scripts/rotate_logs.sh
+          content: |
+            #!/usr/bin/env bash
+            # Keep the newest KEEP *.log files in DIR (by modification time) and delete the older ones.
+            # usage: rotate_logs.sh DIR [KEEP]
+            set -euo pipefail
+
+            dir="${1:?usage: rotate_logs.sh DIR [KEEP]}"
+            keep="${2:-5}"
+
+            # Collect paths with a glob into an array (never word-split `ls` output), so any file
+            # name is safe, then order newest first with -nt. Log directories are small, so an
+            # insertion sort is fine and avoids GNU-only find/sort flags.
+            shopt -s nullglob
+            logs=()
+            for f in "$dir"/*.log; do
+              if [ -f "$f" ]; then logs+=("$f"); fi
+            done
+            for ((i = 1; i < ${#logs[@]}; i++)); do
+              current="${logs[i]}"
+              j=$((i - 1))
+              while ((j >= 0)) && [[ "$current" -nt "${logs[j]}" ]]; do
+                logs[j + 1]="${logs[j]}"
+                j=$((j - 1))
+              done
+              logs[j + 1]="$current"
+            done
+            for f in "${logs[@]:keep}"; do
+              rm -- "$f"
+            done
+      - run_tests: {}
+      - submit_result:
+          summary: "rotate_logs.sh now collects *.log paths with a glob into an array and orders them newest first with -nt instead of word-splitting ls output, so names with spaces, glob characters or leading dashes are counted and deleted correctly; other files and directories are untouched. tests/test_rotate.sh passes."
+          files_changed: [scripts/rotate_logs.sh]
+          commands_run: ["bash tests/test_rotate.sh"]
+          confidence: high
+    reviewer:
+      - read_file: {path: scripts/rotate_logs.sh}
+      - submit_review: {verdict: approve, summary: "Array-based globbing removes the word-splitting bug; rm uses -- and only regular *.log files are considered."}
+  checks:
+    - status: completed
+    - min_level: strong
+    - evidence: {kind: repro, status: pass}
+    - command: "bash tests/test_rotate.sh"
+    - command:
+        run: |
+          bash <<'EOF'
+          set -eu
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          touch -t 202402010000 "$tmp/-dash.log"
+          touch -t 202402020000 "$tmp/two  spaces.log"
+          touch -t 202402030000 "$tmp/glob*star.log"
+          touch -t 202402040000 "$tmp/newest [1].log"
+          touch -t 202401010000 "$tmp/keep me.txt"
+          bash scripts/rotate_logs.sh "$tmp" 2
+          test -e "$tmp/newest [1].log"
+          test -e "$tmp/glob*star.log"
+          test ! -e "$tmp/two  spaces.log"
+          test ! -e "$tmp/-dash.log"
+          test -e "$tmp/keep me.txt"
+          echo "rotation ok"
+          EOF
+        expect_output: "rotation ok"
+    - changed_only: [scripts/rotate_logs.sh, tests/*.sh]

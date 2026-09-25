@@ -1,0 +1,210 @@
+# REST/API work on a standard-library JSON service (routing is a pure function; no network).
+- id: rest-get-todo-endpoint
+  family: rest-api
+  title: Add a GET /todos/<id> endpoint with 404/400 handling and tests
+  request: >-
+    Add a GET /todos/<id> endpoint to api/app.py: return the todo as JSON with 200, 404 with
+    {"error": "not found"} for unknown ids, and 400 with an error message when the id is not a
+    positive integer. Add tests for all three cases to tests/test_app.py.
+  mode: direct
+  test_command: "{python} -m pytest -q -p no:cacheprovider"
+  files:
+    api/__init__.py: ""
+    api/app.py: |
+      """A tiny JSON API on the standard library. Routing is a pure function (handle) so it can be
+      tested without sockets; make_handler() adapts it to http.server for local use."""
+
+      from __future__ import annotations
+
+      import json
+      from http import HTTPStatus
+      from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+      Response = tuple[int, dict[str, str], bytes]
+
+
+      class TodoStore:
+          def __init__(self) -> None:
+              self._items: dict[int, dict] = {}
+              self._next_id = 1
+
+          def add(self, title: str) -> dict:
+              item = {"id": self._next_id, "title": title, "done": False}
+              self._items[item["id"]] = item
+              self._next_id += 1
+              return item
+
+          def all(self) -> list[dict]:
+              return list(self._items.values())
+
+          def get(self, item_id: int) -> dict | None:
+              return self._items.get(item_id)
+
+
+      def json_response(status: int, payload: object) -> Response:
+          body = json.dumps(payload).encode()
+          return int(status), {"Content-Type": "application/json", "Content-Length": str(len(body))}, body
+
+
+      def handle(store: TodoStore, method: str, path: str, body: bytes = b"") -> Response:
+          if path == "/todos" and method == "GET":
+              return json_response(HTTPStatus.OK, store.all())
+          if path == "/todos" and method == "POST":
+              try:
+                  data = json.loads(body or b"{}")
+              except json.JSONDecodeError:
+                  return json_response(HTTPStatus.BAD_REQUEST, {"error": "invalid JSON"})
+              title = data.get("title") if isinstance(data, dict) else None
+              if not isinstance(title, str) or not title.strip():
+                  return json_response(HTTPStatus.BAD_REQUEST, {"error": "title is required"})
+              return json_response(HTTPStatus.CREATED, store.add(title.strip()))
+          return json_response(HTTPStatus.NOT_FOUND, {"error": "not found"})
+
+
+      def make_handler(store: TodoStore) -> type[BaseHTTPRequestHandler]:
+          class Handler(BaseHTTPRequestHandler):
+              def _send(self, method: str) -> None:
+                  length = int(self.headers.get("Content-Length") or 0)
+                  status, headers, body = handle(store, method, self.path, self.rfile.read(length))
+                  self.send_response(status)
+                  for key, value in headers.items():
+                      self.send_header(key, value)
+                  self.end_headers()
+                  self.wfile.write(body)
+
+              def do_GET(self) -> None:
+                  self._send("GET")
+
+              def do_POST(self) -> None:
+                  self._send("POST")
+
+              def log_message(self, format: str, *args: object) -> None:
+                  pass
+
+          return Handler
+
+
+      def serve(port: int = 8000) -> None:
+          ThreadingHTTPServer(("127.0.0.1", port), make_handler(TodoStore())).serve_forever()
+    tests/test_app.py: |
+      import json
+
+      from api.app import TodoStore, handle
+
+
+      def call(store, method, path, payload=None):
+          body = json.dumps(payload).encode() if payload is not None else b""
+          status, headers, raw = handle(store, method, path, body)
+          assert headers["Content-Type"] == "application/json"
+          return status, json.loads(raw)
+
+
+      def test_create_and_list():
+          store = TodoStore()
+          status, item = call(store, "POST", "/todos", {"title": "write docs"})
+          assert status == 201 and item == {"id": 1, "title": "write docs", "done": False}
+          assert call(store, "GET", "/todos") == (200, [item])
+
+
+      def test_create_requires_title():
+          assert call(TodoStore(), "POST", "/todos", {"title": "  "})[0] == 400
+
+
+      def test_unknown_route():
+          assert call(TodoStore(), "GET", "/nope") == (404, {"error": "not found"})
+    pyproject.toml: |
+      [project]
+      name = "todo-api"
+      version = "0.2.0"
+
+      [tool.pytest.ini_options]
+      pythonpath = ["."]
+  script:
+    implementer:
+      - [{read_file: {path: api/app.py}}, {read_file: {path: tests/test_app.py}}]
+      - edit_file:
+          path: api/app.py
+          old_string: |-
+            return json_response(HTTPStatus.CREATED, store.add(title.strip()))
+                return json_response(HTTPStatus.NOT_FOUND, {"error": "not found"})
+          new_string: |-
+            return json_response(HTTPStatus.CREATED, store.add(title.strip()))
+                if path.startswith("/todos/") and method == "GET":
+                    raw_id = path.removeprefix("/todos/")
+                    if not (raw_id.isascii() and raw_id.isdigit()) or int(raw_id) < 1:
+                        return json_response(HTTPStatus.BAD_REQUEST, {"error": "id must be a positive integer"})
+                    item = store.get(int(raw_id))
+                    if item is None:
+                        return json_response(HTTPStatus.NOT_FOUND, {"error": "not found"})
+                    return json_response(HTTPStatus.OK, item)
+                return json_response(HTTPStatus.NOT_FOUND, {"error": "not found"})
+      - edit_file:
+          path: tests/test_app.py
+          old_string: 'assert call(TodoStore(), "GET", "/nope") == (404, {"error": "not found"})'
+          new_string: |-
+            assert call(TodoStore(), "GET", "/nope") == (404, {"error": "not found"})
+
+
+            def test_get_todo_by_id():
+                store = TodoStore()
+                _, created = call(store, "POST", "/todos", {"title": "ship it"})
+                assert call(store, "GET", f"/todos/{created['id']}") == (200, created)
+
+
+            def test_get_unknown_todo_returns_404():
+                assert call(TodoStore(), "GET", "/todos/99") == (404, {"error": "not found"})
+
+
+            def test_get_todo_with_invalid_id_returns_400():
+                for bad in ("abc", "0", "-1", "1.5"):
+                    status, body = call(TodoStore(), "GET", f"/todos/{bad}")
+                    assert status == 400 and "error" in body, bad
+      - run_tests: {}
+      - submit_result:
+          summary: "Added GET /todos/<id>: 200 with the todo, 404 for unknown ids, 400 for non-positive or non-integer ids. Three new tests cover the cases; the suite passes."
+          files_changed: [api/app.py, tests/test_app.py]
+          tests_added_or_changed: [tests/test_app.py]
+          confidence: high
+    reviewer:
+      - read_file: {path: api/app.py}
+      - submit_review: {verdict: approve, summary: "Endpoint validates the id before lookup and returns the documented status codes; tests cover 200/404/400."}
+  checks:
+    - status: completed
+    - min_level: strong
+    - command: "{python} -m pytest -q -p no:cacheprovider"
+    - command:
+        run: |
+          {python} - <<'EOF'
+          import json, threading, urllib.error, urllib.request
+          from http.server import ThreadingHTTPServer
+          from api.app import TodoStore, make_handler
+          store = TodoStore()
+          store.add("first")
+          server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(store))
+          threading.Thread(target=server.serve_forever, daemon=True).start()
+          base = f"http://127.0.0.1:{server.server_address[1]}"
+          opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+          with opener.open(base + "/todos/1", timeout=10) as response:
+              assert response.status == 200 and json.load(response) == {"id": 1, "title": "first", "done": False}
+          for path, code in (("/todos/2", 404), ("/todos/abc", 400), ("/todos/0", 400)):
+              try:
+                  opener.open(base + path, timeout=10)
+              except urllib.error.HTTPError as exc:
+                  assert exc.code == code, (path, exc.code)
+                  assert "error" in json.load(exc)
+              else:
+                  raise AssertionError(f"{path} should have failed with {code}")
+          server.shutdown()
+          print("endpoint ok over HTTP")
+          EOF
+        expect_output: "endpoint ok over HTTP"
+    # The added tests must exercise the endpoint: they fail against the original handler.
+    - command:
+        run: |
+          tmp=$(mktemp -d) && cp -R . "$tmp/repo" && cd "$tmp/repo" && git checkout -q HEAD -- api/app.py || exit 2
+          if {python} -m pytest -q -p no:cacheprovider >/dev/null 2>&1; then echo "tests pass without the endpoint"; exit 1; fi
+          echo "tests exercise the endpoint"
+        expect_output: "tests exercise the endpoint"
+    # At least one test was added to the file named in the request (3 existed before).
+    - file_matches: {path: tests/test_app.py, regex: '(?s)(def test_\w+.*?){4}'}
+    - changed_only: [api/*.py, tests/*.py]

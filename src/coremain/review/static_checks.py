@@ -14,8 +14,8 @@ from coremain.security.redact import Redactor
 from coremain.workspaces.manager import WorkspaceDiff
 
 SKIP_MARKERS = re.compile(
-    r"(@pytest\.mark\.skip|pytest\.skip\(|@unittest\.skip|\bxit\(|\bxdescribe\(|\b(it|test|describe)\.skip\(|"
-    r"t\.Skip\(|#\[ignore\]|@Disabled)"
+    r"(@pytest\.mark\.(skip|xfail)|pytest\.(skip|xfail)\(|@unittest\.(skip|expectedFailure)|\bxit\(|\bxdescribe\(|"
+    r"\b(it|test|describe)\.(skip|failing|todo)\(|\bthis\.skip\(|t\.Skip(Now)?\(|#\[ignore\]|@Disabled|@Ignore\b)"
 )
 DEBUG_LEFTOVERS = re.compile(r"(\bbreakpoint\(\)|pdb\.set_trace\(|debugger;|console\.log\(|dbg!\()")
 LOCKFILES = {
@@ -133,8 +133,8 @@ def static_review(
                 Finding(
                     "high",
                     "tests",
-                    "Test disabled/skipped",
-                    "A skip marker was added, which can mask failures.",
+                    "Test disabled, skipped or marked expected-to-fail",
+                    "A skip/expected-failure marker was added, which makes a failing test look green.",
                     path,
                     line,
                     text.strip()[:160],
