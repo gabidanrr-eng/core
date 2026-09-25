@@ -16,6 +16,7 @@ checked against the baseline; files the human changed meanwhile are 3-way merged
 from __future__ import annotations
 
 import asyncio
+import builtins
 import os
 import shutil
 import stat
@@ -287,7 +288,7 @@ class WorkspaceManager:
         d.mkdir(parents=True, exist_ok=True)
         return d / f"{ws.id}.index"
 
-    def _excludes(self, ws: Workspace) -> list[str]:
+    def _excludes(self, ws: Workspace) -> builtins.list[str]:
         return [f":(exclude){p}" for p in ws.meta.get("shared", [])]
 
     async def _ensure_shadow(self, project_id: str, root: Path) -> Git:
@@ -454,7 +455,7 @@ class WorkspaceManager:
         dest.mkdir(parents=True, exist_ok=True)
 
     async def _commit_state(
-        self, git: Git, message: str, excludes: list[str], *, commit_to_head: bool = False
+        self, git: Git, message: str, excludes: builtins.list[str], *, commit_to_head: bool = False
     ) -> str:
         await git.run("add", "-A", "--", ".", *excludes)
         if commit_to_head:
@@ -473,8 +474,14 @@ class WorkspaceManager:
         idx = git.with_index(self._index_file(ws))
         await idx.run("add", "-A", "--", ".", *self._excludes(ws))
         if ws.base_ref is not None:
-            added = (await idx.run("diff", "--cached", "--name-only", "--diff-filter=A", "-z", ws.base_ref)).stdout
-            junk = [p for p in added.decode("utf-8", errors="surrogateescape").split("\x00") if p and is_generated(p)]
+            added = (
+                await idx.run("diff", "--cached", "--name-only", "--diff-filter=A", "-z", ws.base_ref)
+            ).stdout
+            junk = [
+                p
+                for p in added.decode("utf-8", errors="surrogateescape").split("\x00")
+                if p and is_generated(p)
+            ]
             if junk:
                 await idx.run(
                     "rm",
@@ -483,7 +490,9 @@ class WorkspaceManager:
                     "--ignore-unmatch",
                     "--pathspec-from-file=-",
                     "--pathspec-file-nul",
-                    input="\x00".join(f":(literal){p}" for p in junk).encode("utf-8", errors="surrogateescape"),
+                    input="\x00".join(f":(literal){p}" for p in junk).encode(
+                        "utf-8", errors="surrogateescape"
+                    ),
                 )
         return await idx.out("write-tree")
 
@@ -647,7 +656,7 @@ class WorkspaceManager:
         self._index_file(ws).unlink(missing_ok=True)
         self.set_status(ws, "deleted", removed_reason=reason)
 
-    def gc_plan(self, *, task_status: dict[str, str], force_orphans: bool = False) -> list[GcAction]:
+    def gc_plan(self, *, task_status: dict[str, str], force_orphans: bool = False) -> builtins.list[GcAction]:
         """Decide what can be deleted. Never touches active or recoverable work."""
         actions: list[GcAction] = []
         now = self.clock.now()
@@ -707,7 +716,7 @@ class WorkspaceManager:
 
     async def gc(
         self, *, task_status: dict[str, str], dry_run: bool = True, force_orphans: bool = False
-    ) -> list[GcAction]:
+    ) -> builtins.list[GcAction]:
         actions = self.gc_plan(task_status=task_status, force_orphans=force_orphans)
         if dry_run:
             return actions

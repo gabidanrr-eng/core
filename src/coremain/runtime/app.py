@@ -529,7 +529,11 @@ class CoreRuntime:
             return existing
         t = asyncio.create_task(self.run_task(task_id))
         self._running[task_id] = t
-        t.add_done_callback(lambda _t, tid=task_id: self._running.pop(tid, None))
+
+        def forget(_t: asyncio.Task[Task], tid: str = task_id) -> None:
+            self._running.pop(tid, None)
+
+        t.add_done_callback(forget)
         return t
 
     def cancel_task(self, task_id: str, *, reason: str = "cancelled by user") -> Task:

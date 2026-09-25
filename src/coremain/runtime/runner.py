@@ -959,7 +959,7 @@ class TaskRunner:
         if outcome.status == "suspended":
             return NodeResult("suspended")
         payload = outcome.payload
-        common = {
+        common: dict[str, Any] = {
             "project_id": run.project.id,
             "task_id": run.task.id,
             "attempt_id": run.attempt.id,

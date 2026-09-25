@@ -167,8 +167,8 @@ async def _providers(rt: CoreRuntime, live: bool) -> list[Check]:
             )
             continue
         try:
-            models = await rt.registry.provider(pid).list_models()
-            out.append(_check(name, "ok", f"reachable; {len(models)} model(s) listed"))
+            listed = await rt.registry.provider(pid).list_models()
+            out.append(_check(name, "ok", f"reachable; {len(listed)} model(s) listed"))
         except Exception as exc:  # noqa: BLE001 - report the exact provider error class
             cls = getattr(exc, "error_class", None)
             out.append(
@@ -294,9 +294,7 @@ def _skills(rt: CoreRuntime) -> Check:
     detail = f"{len(skills)} skill(s); {len(untrusted)} untrusted" + (
         f"; invalid: {', '.join(s.name for s in invalid[:5])}" if invalid else ""
     )
-    return _check(
-        "skills", "warn" if invalid else "ok", detail, "core skills validate" if invalid else None
-    )
+    return _check("skills", "warn" if invalid else "ok", detail, "core skills validate" if invalid else None)
 
 
 async def _state(rt: CoreRuntime) -> list[Check]:

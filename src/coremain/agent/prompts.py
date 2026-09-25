@@ -60,7 +60,11 @@ REVIEW_STRATEGIES: dict[str, str] = {
 
 
 def system_prompt(
-    role: str, *, strategy: str | None = None, output_tool: str | None = None, guidance: list[str] | None = None
+    role: str,
+    *,
+    strategy: str | None = None,
+    output_tool: str | None = None,
+    guidance: list[str] | None = None,
 ) -> str:
     parts = [ROLES.get(role, ROLES["implementer"]), COMMON]
     if strategy:

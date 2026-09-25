@@ -40,7 +40,7 @@ class Output:
         self.console = Console(stderr=False, highlight=False, soft_wrap=False)
         self.err = Console(stderr=True, highlight=False)
 
-    def data(self, payload: Any, human: Callable[[Console], None] | str | None = None) -> None:
+    def data(self, payload: Any, human: Callable[[Console], object] | str | None = None) -> None:
         if self.json_mode:
             sys.stdout.write(dumps({"ok": True, "data": payload}, indent=2) + "\n")
             return

@@ -236,9 +236,7 @@ class OpenAICompatibleProvider(Provider):
     async def list_models(self) -> list[DiscoveredModel]:
         headers = {k: v for k, v in self._headers().items() if k != "accept"}
         data = await self._get_json(f"{self.base_url}/models", headers)
-        items = (
-            data.get("data", data if isinstance(data, list) else []) if isinstance(data, (dict, list)) else []
-        )
+        items = data.get("data", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
         models: list[DiscoveredModel] = []
         for item in items:
             if not isinstance(item, dict) or "id" not in item:

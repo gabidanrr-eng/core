@@ -19,7 +19,7 @@ def plan_requirements(
     config: VerificationConfig,
 ) -> list[Requirement]:
     if not changes_code:
-        reqs = [
+        reqs: list[Requirement] = [
             Requirement(
                 EvidenceKind.WORKSPACE_UNCHANGED, description="no files were modified (read-only task)"
             )
@@ -38,7 +38,7 @@ def plan_requirements(
             )
         return reqs
     commands = {**(profile.get("commands") or {}), **config.commands}
-    reqs: list[Requirement] = [
+    reqs = [
         Requirement(EvidenceKind.DIFF, description="the workspace contains changes"),
         Requirement(EvidenceKind.SCOPE, description="no forbidden or protected paths were modified"),
         Requirement(EvidenceKind.NO_SECRETS, description="no secrets were introduced in the diff"),
@@ -69,7 +69,7 @@ def plan_requirements(
     for item in contract.get("required_commands") or []:
         name = item.get("name") if isinstance(item, dict) else None
         cmd = item.get("command") if isinstance(item, dict) else str(item)
-        reqs.append(Requirement(EvidenceKind.COMMAND, name or cmd, f"contract command passes (`{cmd}`)"))
+        reqs.append(Requirement(EvidenceKind.COMMAND, str(name or cmd), f"contract command passes (`{cmd}`)"))
     for path in contract.get("required_tests") or []:
         reqs.append(Requirement(EvidenceKind.TESTS, f"required:{path}", f"required test passes ({path})"))
     for check in contract.get("browser_checks") or []:

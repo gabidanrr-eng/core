@@ -155,7 +155,7 @@ class AgentLoop:
         nudged = False
         recent: deque[tuple[str, str]] = deque(maxlen=8)
         window = model.config.context_window
-        ids = {
+        ids: dict[str, Any] = {
             "project_id": ctx.project_id,
             "session_id": ctx.session_id,
             "task_id": ctx.task_id,

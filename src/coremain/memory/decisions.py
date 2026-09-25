@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
@@ -153,7 +154,7 @@ class DecisionStore:
         )
         return self.get(decision_id)
 
-    def relevant(self, project_id: str, text: str, *, limit: int = 5) -> list[Decision]:
+    def relevant(self, project_id: str, text: str, *, limit: int = 5) -> builtins.list[Decision]:
         terms = query_terms(text, max_terms=12)
         decisions = self.list(project_id, status="accepted")
         if not terms:

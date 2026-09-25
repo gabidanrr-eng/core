@@ -100,6 +100,9 @@ warn_unused_ignores = true
 warn_unreachable = false
 strict_equality = true
 ignore_missing_imports = true
+plugins = ["pydantic.mypy"]
+# CLI human-output lambdas deliberately evaluate a tuple of console.print side effects.
+disable_error_code = ["func-returns-value"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

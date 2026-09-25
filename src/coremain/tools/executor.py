@@ -6,7 +6,7 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast, get_args
 
 from pydantic import ValidationError
 
@@ -19,6 +19,7 @@ from coremain.errors import (
     ToolError,
 )
 from coremain.providers.types import ToolCall
+from coremain.runtime.approvals import Scope
 from coremain.security.policy import PolicyDecision
 from coremain.tools.base import Tool, ToolContext, ToolResult
 from coremain.util.ids import new_id
@@ -294,9 +295,8 @@ class ToolExecutor:
                     fut.cancel()
         if interactive in done and not interactive.cancelled() and interactive.exception() is None:
             answer = interactive.result()
-            final = svc.approvals.decide(
-                approval.id, answer.approved, scope=answer.scope, reason=answer.reason
-            )  # type: ignore[arg-type]
+            scope = cast(Scope, answer.scope if answer.scope in get_args(Scope) else "once")
+            final = svc.approvals.decide(approval.id, answer.approved, scope=scope, reason=answer.reason)
         elif external in done and external.exception() is None:
             final = external.result()
         else:

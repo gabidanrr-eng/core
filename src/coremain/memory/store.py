@@ -13,6 +13,7 @@ marked stale and down-weighted in retrieval instead of silently remaining "true"
 
 from __future__ import annotations
 
+import builtins
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -276,7 +277,7 @@ class MemoryStore:
         scopes: tuple[str, ...] = ("project", "operational", "session"),
         session_id: str | None = None,
         limit: int = 12,
-    ) -> list[MemoryItem]:
+    ) -> builtins.list[MemoryItem]:
         if not self.config.enabled:
             return []
         allowed = [s for s in scopes if s != "global" or self.config.global_enabled]
@@ -379,7 +380,7 @@ class MemoryStore:
                 [(now, i) for i in ids],
             )
 
-    def check_anchors(self, project_id: str, root: Path) -> list[str]:
+    def check_anchors(self, project_id: str, root: Path) -> builtins.list[str]:
         stale: list[str] = []
         for item in self.list(project_id, statuses=("active",), limit=5000):
             for anchor in item.anchors:

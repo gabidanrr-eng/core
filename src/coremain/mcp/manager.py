@@ -149,9 +149,9 @@ class MCPManager:
             }
         except MCPError as exc:
             diag = ""
-            client = self._clients.get(name)
-            if client is not None:
-                diag = client.transport.diagnostics()
+            existing = self._clients.get(name)
+            if existing is not None:
+                diag = existing.transport.diagnostics()
             self._save_state(
                 name, status="error", error_class=exc.error_class, error_message=exc.message[:500]
             )

@@ -60,7 +60,7 @@ class LazyGroup(click.Group):
             import importlib
 
             module, attr = self.lazy[cmd_name]
-            return getattr(importlib.import_module(module), attr)  # type: ignore[no-any-return]
+            return getattr(importlib.import_module(module), attr)
         return super().get_command(ctx, cmd_name)
 
 

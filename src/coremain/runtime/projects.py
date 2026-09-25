@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -222,14 +223,14 @@ class SessionService:
         assert row is not None
         return Message.from_row(row)
 
-    def messages(self, session_id: str, *, limit: int = 500) -> list[Message]:
+    def messages(self, session_id: str, *, limit: int = 500) -> builtins.list[Message]:
         rows = self.db.query(
             "SELECT * FROM (SELECT * FROM messages WHERE session_id = ? ORDER BY seq DESC LIMIT ?) ORDER BY seq",
             (session_id, limit),
         )
         return [Message.from_row(r) for r in rows]
 
-    def search(self, project_id: str, query: str, *, limit: int = 20) -> list[tuple[Message, str]]:
+    def search(self, project_id: str, query: str, *, limit: int = 20) -> builtins.list[tuple[Message, str]]:
         match = fts_query(query_terms(query))
         if not match:
             return []

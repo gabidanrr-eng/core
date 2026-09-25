@@ -64,7 +64,8 @@ def modern_meta() -> dict[str, Any]:
 
 
 def _rpc_error(err: dict[str, Any]) -> MCPError:
-    code = err.get("code")
+    raw_code = err.get("code")
+    code = raw_code if isinstance(raw_code, int) else -1
     message = str(err.get("message", "error"))
     klass = {
         -32601: "method_not_found",

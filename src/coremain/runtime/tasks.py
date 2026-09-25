@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 import sqlite3
 from collections.abc import Callable, Iterable
 from typing import Any
@@ -103,7 +104,7 @@ class TaskService:
         params.append(limit)
         return [Task.from_row(r) for r in self.db.query(sql, params)]
 
-    def attempts(self, task_id: str) -> list[Attempt]:
+    def attempts(self, task_id: str) -> builtins.list[Attempt]:
         return [
             Attempt.from_row(r)
             for r in self.db.query("SELECT * FROM attempts WHERE task_id = ? ORDER BY number", (task_id,))
@@ -115,7 +116,7 @@ class TaskService:
             raise NotFoundError(f"attempt {attempt_id} not found")
         return Attempt.from_row(row)
 
-    def dependencies(self, task_id: str) -> list[Task]:
+    def dependencies(self, task_id: str) -> builtins.list[Task]:
         rows = self.db.query(
             "SELECT t.* FROM task_deps d JOIN tasks t ON t.id = d.depends_on WHERE d.task_id = ?", (task_id,)
         )
@@ -124,7 +125,7 @@ class TaskService:
     def dependencies_met(self, task_id: str) -> bool:
         return all(dep.status == TaskStatus.COMPLETED for dep in self.dependencies(task_id))
 
-    def runnable(self, *, project_id: str | None = None, limit: int = 20) -> list[Task]:
+    def runnable(self, *, project_id: str | None = None, limit: int = 20) -> builtins.list[Task]:
         sql = (
             "SELECT t.* FROM tasks t WHERE t.status = 'queued' AND t.cancel_requested_at IS NULL "
             "AND NOT EXISTS (SELECT 1 FROM task_deps d JOIN tasks x ON x.id = d.depends_on "
@@ -529,7 +530,7 @@ class TaskService:
         self.db.execute("UPDATE attempts SET heartbeat_at = ? WHERE id = ?", (self.clock.now(), attempt_id))
         return True
 
-    def release_dependents(self, task_id: str) -> list[str]:
+    def release_dependents(self, task_id: str) -> builtins.list[str]:
         """Move pending tasks whose dependencies are now all completed into the queue."""
         released: list[str] = []
         rows = self.db.query("SELECT task_id FROM task_deps WHERE depends_on = ?", (task_id,))

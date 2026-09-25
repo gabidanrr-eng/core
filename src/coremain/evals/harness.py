@@ -217,7 +217,7 @@ class EvalHarness:
         keep: bool,
         heuristics: list[dict[str, Any]],
     ) -> dict[str, Any]:
-        base = {
+        base: dict[str, Any] = {
             "scenario": sc.id,
             "family": sc.family,
             "title": sc.title,

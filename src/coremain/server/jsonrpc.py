@@ -217,8 +217,8 @@ class Server:
                     for ev in self.rt.events.since(seq, limit=500):
                         seq = ev.seq or seq
                         await self._deliver(ev, ephemeral=False)
-                    while (ev := sub.get_nowait()) is not None:
-                        await self._deliver(ev, ephemeral=True)
+                    while (eph := sub.get_nowait()) is not None:
+                        await self._deliver(eph, ephemeral=True)
                 else:
                     seq = self.rt.events.latest_seq()
                     while sub.get_nowait() is not None:

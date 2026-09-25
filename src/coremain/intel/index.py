@@ -379,11 +379,11 @@ class CodeIndex:
                 parts.pop()
             return None
         if lang in {"javascript", "typescript", "vue", "svelte"} and module.startswith("."):
-            base = posixpath.normpath(posixpath.join(posixpath.dirname(src), module))
+            target = posixpath.normpath(posixpath.join(posixpath.dirname(src), module))
             for cand in (
-                base,
-                *(base + ext for ext in (".ts", ".tsx", ".js", ".jsx", ".mjs", ".vue", ".svelte")),
-                *(f"{base}/index{ext}" for ext in (".ts", ".tsx", ".js", ".jsx")),
+                target,
+                *(target + ext for ext in (".ts", ".tsx", ".js", ".jsx", ".mjs", ".vue", ".svelte")),
+                *(f"{target}/index{ext}" for ext in (".ts", ".tsx", ".js", ".jsx")),
             ):
                 if cand in files:
                     return cand
@@ -399,8 +399,8 @@ class CodeIndex:
                 None,
             )
         if lang in {"ruby"} and module.startswith("."):
-            base = posixpath.normpath(posixpath.join(posixpath.dirname(src), module))
-            return base + ".rb" if base + ".rb" in files else None
+            target = posixpath.normpath(posixpath.join(posixpath.dirname(src), module))
+            return target + ".rb" if target + ".rb" in files else None
         return None
 
     # ------------------------------------------------------------------ queries
